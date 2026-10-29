@@ -1,0 +1,7 @@
+PySide6>=6.6
+pymupdf>=1.24
+numpy>=1.26
+# opzionale: allineamento semantico tra lingue (scarica ~470 MB al primo avvio)
+# sentence-transformers>=3.0
+# passo 3 (generazione lingua mancante): non serve nessun pacchetto Python in più, ma
+# Ollama (https://ollama.com) avviato + "ollama pull translategemma:4b"

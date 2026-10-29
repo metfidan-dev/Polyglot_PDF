@@ -1,0 +1,20 @@
+# ambiente Python (si ricrea con: python -m venv .venv + pip install -r requirements.txt)
+.venv/
+__pycache__/
+*.pyc
+
+# build (PyInstaller / Inno Setup): si rigenerano con packaging\build.ps1
+packaging/build/
+packaging/dist/
+packaging/output/
+packaging/*.spec
+
+# documenti di prova (PDF di terzi, protetti da diritto d'autore) e file di lavoro
+test1/
+*.pdf
+*.polypdf.json
+*.polymap.json
+*.tmp
+
+# dati locali della versione portabile
+dati/
