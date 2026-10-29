@@ -1,33 +1,55 @@
 # PolyglotPDF
 
-Lettore desktop per lo **stesso documento PDF in più lingue** (ad esempio un manuale tecnico in italiano, tedesco, francese e inglese).
-Funziona offline, con modelli locali e gratuiti. L'interfaccia è in italiano.
+*[Leggi in italiano](README.it.md)*
 
-## Funzioni
+A desktop reader for the **same PDF document in several languages** — for example a technical manual in Italian, German, French and English.
+It works offline, with free local models. The interface is in English or Italian (chosen automatically from the Windows language, switchable in *Help → Language / Lingua*).
 
-- **Cambio lingua istantaneo mantenendo il punto di lettura** (`Ctrl+1…9`, `Ctrl+Tab`): i paragrafi delle varie lingue vengono allineati automaticamente.
-- **Evidenziazioni e note sincronizzate**: ciò che evidenzi in una lingua compare sul testo corrispondente nelle altre, con correzione manuale se serve. Esportazione in PDF annotati standard.
-- **Traduzione della selezione**: selezioni del testo → *Traduci* → la traduzione compare in un riquadro ancorato alla selezione (copia, salva come nota).
-- **Generazione di una lingua mancante**: traduce l'intero PDF con un LLM locale mantenendo impaginazione, immagini e grafica; traduzione in background con ripresa, glossario per coppia di lingue, revisione dei singoli paragrafi.
-- **OCR delle pagine scansionate** (Tesseract integrato in PyMuPDF): il testo diventa selezionabile, annotabile e traducibile.
-- **Allineamento semantico** fra le lingue tramite embedding multilingue; senza modello, ripiego euristico su numeri, sigle e codici.
+## Screenshots
 
-## Requisiti
+*The manual shown is a fictional example created for these screenshots.*
 
-- Windows (sviluppato e provato su Windows 11; il codice è Python + Qt, ma su altri sistemi non è verificato)
-- Python 3.10 o successivo
-- Facoltativo, per traduzione e allineamento semantico: [Ollama](https://ollama.com) con i modelli
+**Highlights and notes** — the annotation panel on the right lists them all:
+
+![Highlights and notes on the English manual](docs/screenshots/en/1_highlights.png)
+
+**Switch to German (`Ctrl+2`)** — same reading position; the highlights and notes appear on the matching German text (dashed underline = estimated position):
+
+![The same highlights shown on the German manual](docs/screenshots/en/2_language_switch.png)
+
+**Translate a selection** — the translation appears in a box anchored to the selected text:
+
+![Translation of a selected German sentence](docs/screenshots/en/3_translate_selection.png)
+
+**Generate a missing language** with a local model (here French from English):
+
+![The "Generate missing language" dialog](docs/screenshots/en/4_generate_language.png)
+
+## Features
+
+- **Instant language switch that keeps your reading position** (`Ctrl+1…9`, `Ctrl+Tab`): the paragraphs of the different languages are aligned automatically.
+- **Synchronised highlights and notes**: what you highlight in one language appears on the matching text in the others, with manual correction when needed. Export to standard annotated PDFs.
+- **Translate a selection**: select some text → *Translate* → the translation appears in a box anchored to the selection (copy it or save it as a note).
+- **Generate a missing language**: translates the whole PDF with a local LLM while keeping layout, images and graphics; background translation with resume, a glossary per language pair, and review of individual paragraphs.
+- **OCR of scanned pages** (Tesseract built into PyMuPDF): the text becomes selectable, annotatable and translatable.
+- **Semantic alignment** between languages through multilingual embeddings; without a model, a heuristic fallback based on numbers, acronyms and codes.
+
+## Requirements
+
+- Windows (developed and tested on Windows 11; the code is Python + Qt, other systems are untested)
+- Python 3.10 or later
+- Optional, for translation and semantic alignment: [Ollama](https://ollama.com) with the models
 
   ```bat
   ollama pull translategemma:4b
   ollama pull paraphrase-multilingual
   ```
 
-  In basso nella finestra l'indicatore **● Traduzione disponibile / non disponibile** dice se Ollama è stato rilevato.
+  The **● Translation available / not available** indicator at the bottom of the window tells you whether Ollama was detected.
 
-Su un portatile senza scheda grafica dedicata la traduzione gira sulla CPU: alcuni secondi per una frase breve, ore per un manuale intero. Con 8 GB di RAM il primo caricamento del modello può richiedere circa un minuto.
+On a laptop without a dedicated graphics card the translation runs on the CPU: a few seconds for a short sentence, hours for a whole manual. With 8 GB of RAM the first loading of the model can take about a minute.
 
-## Installazione da sorgente
+## Installation from source
 
 ```bat
 git clone https://github.com/metfidan-dev/Polyglot_PDF.git
@@ -36,42 +58,46 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-Avvio: doppio clic su `avvia.bat`, oppure
+Start: double-click `avvia.bat`, or
 
 ```bat
-.venv\Scripts\python polyglot_pdf.py [progetto.polypdf.json | file1.pdf file2.pdf ...]
+.venv\Scripts\python polyglot_pdf.py [project.polypdf.json | file1.pdf file2.pdf ...]
 ```
 
-Il pacchetto si chiama `pymupdf`: non installare il pacchetto `fitz` di PyPI, che è un'altra cosa.
-I dati OCR per lingue diverse da italiano, tedesco, francese e inglese vengono scaricati dall'app alla prima necessità (da [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata)).
+The package is called `pymupdf`: do not install the `fitz` package from PyPI, which is something else.
+OCR data for languages other than Italian, German, French and English is downloaded by the app when first needed (from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata)).
 
-## Uso in breve
+## Quick start
 
-1. **File → Aggiungi PDF/lingua…** (`Ctrl+L`) o trascina i PDF nella finestra; la lingua viene proposta dal nome del file o dal contenuto.
-2. Cambia lingua con la barra in alto o `Ctrl+1…9`.
-3. Seleziona del testo con il mouse: menu con evidenziazione (5 colori), nota, copia e traduzione.
-4. **File → Salva progetto** (`Ctrl+S`): un file `.polypdf.json` con i percorsi dei PDF, le annotazioni e il glossario.
-5. **Traduzione → Genera lingua mancante…** (`Ctrl+Shift+G`) per creare una nuova lingua; conviene prima la prova su 2–3 pagine, che stima il tempo totale.
+1. **File → Add PDF/language…** (`Ctrl+L`) or drag the PDFs into the window; the language is suggested from the file name or the content.
+2. Switch language with the toolbar or `Ctrl+1…9`.
+3. Select text with the mouse: menu with highlight (5 colours), note, copy and translation.
+4. **File → Save project** (`Ctrl+S`): a `.polypdf.json` file with the PDF paths, the annotations and the glossary.
+5. **Translation → Generate missing language…** (`Ctrl+Shift+G`) to create a new language; start with the test on 2–3 pages, which estimates the total time.
 
-## Eseguibile per Windows
+## Windows executable
 
 ```bat
-powershell -ExecutionPolicy Bypass -File packaging\build.ps1            :: installer (richiede Inno Setup 6)
-powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Portable  :: versione portabile (ZIP)
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1            :: installer (requires Inno Setup 6)
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Portable  :: portable version (ZIP)
 ```
 
-## Struttura
+## Structure
 
-| File | Contenuto |
+| File | Content |
 |---|---|
-| `polyglot_pdf.py` | l'applicazione (un solo file) |
-| `requirements.txt` | dipendenze Python |
-| `avvia.bat` | avvio con l'ambiente `.venv` |
-| `packaging/` | script per installer e versione portabile |
-| `HANDOFF.md` | note tecniche di sviluppo: architettura, formati dei file, test eseguiti, limiti noti |
+| `polyglot_pdf.py` | the application (a single file); the Italian interface texts are in `IT_TEXTS` at the end |
+| `requirements.txt` | Python dependencies |
+| `avvia.bat` | start with the `.venv` environment |
+| `packaging/` | scripts for the installer and the portable version |
+| `HANDOFF.md` | technical development notes: architecture, file formats, tests, known limits |
 
-## Licenza
+## Translating the interface
 
-PolyglotPDF è distribuito con licenza [GNU AGPL-3.0](LICENSE).
+All interface texts are written in English in the code and wrapped in `_t("…")`; the Italian translations are in the `IT_TEXTS` dictionary at the end of `polyglot_pdf.py`, with the same `{placeholders}`. A text without a translation is simply shown in English.
 
-Componenti di terze parti: [PyMuPDF](https://github.com/pymupdf/PyMuPDF) (AGPL-3.0), [PySide6 / Qt](https://www.qt.io/qt-for-python) (LGPL-3.0), [NumPy](https://numpy.org) (BSD), dati [Tesseract](https://github.com/tesseract-ocr/tessdata) (Apache-2.0). I modelli usati tramite Ollama hanno licenze proprie (TranslateGemma: Gemma Terms of Use).
+## License
+
+PolyglotPDF is released under the [GNU AGPL-3.0](LICENSE) license.
+
+Third-party components: [PyMuPDF](https://github.com/pymupdf/PyMuPDF) (AGPL-3.0), [PySide6 / Qt](https://www.qt.io/qt-for-python) (LGPL-3.0), [NumPy](https://numpy.org) (BSD), [Tesseract](https://github.com/tesseract-ocr/tessdata) data (Apache-2.0). The models used through Ollama have their own licenses (TranslateGemma: Gemma Terms of Use).

@@ -1,5 +1,6 @@
-; Installer di PolyglotPDF (Inno Setup 6) — compilato da build.ps1
-; Installazione per l'utente corrente: non servono diritti di amministratore.
+; PolyglotPDF installer (Inno Setup 6) — compiled by build.ps1
+; Installation for the current user: no administrator rights needed.
+; The setup asks for English or Italian (language of the installer wizard only).
 
 #ifndef AppVersion
   #define AppVersion "0.3.0"
@@ -30,6 +31,7 @@ WizardStyle=modern
 CloseApplications=yes
 
 [Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Tasks]

@@ -1,45 +1,49 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PolyglotPDF — Passo 2: evidenziazioni e note sincronizzate tra le lingue
-=======================================================================
-Passo 1
-- Un "progetto" raggruppa lo stesso documento in più lingue (PDF già esistenti).
-- Cambio lingua istantaneo (Ctrl+1..9, Ctrl+Tab) mantenendo il punto di lettura.
-- Allineamento automatico dei paragrafi (semantico se c'è sentence-transformers,
-  altrimenti euristico su numeri/sigle/codici). Cache in ~/.cache/polyglot_pdf.
+PolyglotPDF — read the same PDF document in several languages
+=============================================================
+Step 1
+- A "project" groups the same document in several languages (existing PDFs).
+- Instant language switch (Ctrl+1..9, Ctrl+Tab) keeping the reading position.
+- Automatic paragraph alignment (semantic if sentence-transformers is available,
+  otherwise heuristic on numbers/acronyms/codes). Cache in ~/.cache/polyglot_pdf.
 
-Passo 2
-- Selezione del testo col mouse -> menu: evidenzia (5 colori), evidenzia con nota, copia.
-- Note a punto (tasto destro "Aggiungi nota qui" o modalità Nota).
-- Ogni evidenziazione/nota compare anche nelle altre lingue, sul testo corrispondente
-  (sottolineatura tratteggiata = posizione stimata). Si può correggere a mano
-  per singola lingua ("Correggi posizione in questa lingua").
-- Pannello laterale con tutte le annotazioni (testo mostrato nella lingua corrente).
-- Annullamento (Ctrl+Z), salvataggio automatico nel progetto.
-- Esportazione PDF annotati (annotazioni PDF standard, leggibili in Acrobat ecc.).
+Step 2
+- Mouse text selection -> menu: highlight (5 colours), highlight with note, copy.
+- Point notes (right click "Add note here" or Note mode).
+- Every highlight/note also appears in the other languages, on the matching text
+  (dashed underline = estimated position). It can be corrected by hand
+  per language ("Fix position in this language").
+- Side panel with all annotations (text shown in the current language).
+- Undo (Ctrl+Z), automatic saving into the project.
+- Export of annotated PDFs (standard PDF annotations, readable in Acrobat etc.).
 
-Passo 3
-- Generazione di una lingua mancante con LLM locale (Ollama, es. translategemma:4b):
-  prova su poche pagine con stima del tempo, traduzione in background con cache
-  per paragrafo e ripresa, glossario per coppia di lingue.
-- Ricostruzione del PDF con PyMuPDF: testo originale rimosso (immagini e grafica
-  intatte) e traduzione nello stesso riquadro, con lo stile originale.
-- File di corrispondenza <nome>.polymap.json accanto al PDF generato: allineamento
-  esatto con la lingua sorgente e modifiche manuali dei paragrafi (tasto destro).
+Step 3
+- Generation of a missing language with a local LLM (Ollama, e.g. translategemma:4b):
+  test on a few pages with time estimate, background translation with per-paragraph
+  cache and resume, glossary per language pair.
+- PDF rebuilt with PyMuPDF: original text removed (images and graphics
+  untouched) and translation in the same box, with the original style.
+- Mapping file <name>.polymap.json next to the generated PDF: exact alignment
+  with the source language and manual edits of paragraphs (right click).
 
-Passo 4
-- Allineamento semantico anche senza sentence-transformers: embedding da Ollama
-  (modello paraphrase-multilingual).
-- OCR delle pagine scansionate (Tesseract integrato in PyMuPDF), in un processo
-  separato e con cache: testo selezionabile, annotazioni, allineamento e traduzione.
+Step 4
+- Semantic alignment also without sentence-transformers: embeddings from Ollama
+  (paraphrase-multilingual model).
+- OCR of scanned pages (Tesseract built into PyMuPDF), in a separate process
+  and cached: selectable text, annotations, alignment and translation.
 
-Dipendenze:   python -m pip install PySide6 pymupdf numpy
-Opzionale:    python -m pip install sentence-transformers
-Passo 3:      Ollama (https://ollama.com) + ollama pull translategemma:4b
-Passo 4:      ollama pull paraphrase-multilingual   (dati OCR scaricati dall'app)
+Step 5
+- Interface in English or Italian (automatic from the Windows language, menu Help).
+- Translation of the selected text in a note-like popup anchored to the selection.
 
-Uso:  python polyglot_pdf.py [progetto.polypdf.json | file1.pdf file2.pdf ...]
+Dependencies:  python -m pip install PySide6 pymupdf numpy
+Optional:      python -m pip install sentence-transformers
+Step 3:        Ollama (https://ollama.com) + ollama pull translategemma:4b
+Step 4:        ollama pull paraphrase-multilingual   (OCR data downloaded by the app)
+
+Usage:  python polyglot_pdf.py [project.polypdf.json | file1.pdf file2.pdf ...]
 """
 from __future__ import annotations
 
@@ -62,20 +66,22 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# PyMuPDF 2.x carica a ogni avvio un modello ONNX di analisi del layout (pymupdf.layout,
-# ~2 s) che qui non serve: lo si disattiva. L'estrazione del testo resta identica.
+# PyMuPDF 2.x loads an ONNX layout-analysis model at every start (pymupdf.layout,
+# ~2 s) that is not needed here: it is disabled. Text extraction stays identical.
 sys.modules.setdefault("pymupdf.layout", None)
 try:
     try:
-        import pymupdf as fitz   # PyMuPDF >= 1.24.3 (il nome "fitz" è deprecato)
+        import pymupdf as fitz   # PyMuPDF >= 1.24.3 (the name "fitz" is deprecated)
     except ImportError:
         import fitz
     import numpy as np
     import PySide6  # noqa: F401
 except ImportError as _e:
-    sys.exit(f"Modulo mancante: {'pymupdf' if _e.name == 'fitz' else _e.name}. Questo Python ({sys.executable}) non ha le dipendenze.\n"
-             "Avvia con l'ambiente del progetto:  .venv\\Scripts\\python polyglot_pdf.py  (oppure avvia.bat)")
-from PySide6.QtCore import (QPointF, QProcess, QRectF, Qt, QThread, QTimer, QUrl, Signal,
+    sys.exit(f"Missing module / Modulo mancante: {'pymupdf' if _e.name == 'fitz' else _e.name}. "
+             f"This Python ({sys.executable}) lacks the dependencies.\n"
+             "Start with the project environment / Avvia con l'ambiente del progetto:  "
+             ".venv\\Scripts\\python polyglot_pdf.py  (or/oppure avvia.bat)")
+from PySide6.QtCore import (QLocale, QPointF, QProcess, QRectF, Qt, QThread, QTimer, QUrl, Signal,
                             qVersion)
 from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QCursor,
                            QDesktopServices, QIcon, QImage, QKeySequence, QPainter,
@@ -92,16 +98,16 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                                QToolButton, QVBoxLayout)
 
 # --------------------------------------------------------------------------- #
-# Costanti
+# Constants
 # --------------------------------------------------------------------------- #
 APP_NAME = "PolyglotPDF"
-APP_VERSION = "0.5.1"    # 0.<passo>.<correzione>
+APP_VERSION = "0.6.0"    # 0.<step>.<fix>
 PROJECT_EXT = ".polypdf.json"
 
 
 def _data_dir() -> str:
-    """Versione portabile (.exe con portable.txt accanto): dati nella cartella «dati» del
-    programma, così il PC resta pulito e la chiavetta si porta dietro cache e dati OCR."""
+    """Portable version (.exe with portable.txt next to it): data in the program's «dati»
+    folder, so the PC stays clean and the USB stick carries cache and OCR data along."""
     if getattr(sys, "frozen", False):
         here = os.path.dirname(os.path.abspath(sys.executable))
         if os.path.exists(os.path.join(here, "portable.txt")):
@@ -111,10 +117,11 @@ def _data_dir() -> str:
 
 CACHE_DIR = _data_dir()
 EMB_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-OLLAMA_EMB_MODEL = "paraphrase-multilingual"      # ripiego senza sentence-transformers
+OLLAMA_EMB_MODEL = "paraphrase-multilingual"      # fallback without sentence-transformers
 ALIGN_VERSION = "v1"
-METHOD_LABELS = {"semantico": "semantico", "semantico-ollama": "semantico, Ollama",
-                 "euristico": "euristico"}
+# alignment methods: internal keys (used in cache file names) -> label shown to the user
+METHOD_LABELS = {"semantico": "semantic", "semantico-ollama": "semantic, Ollama",
+                 "euristico": "heuristic"}
 
 TESSDATA_DIR = os.path.join(CACHE_DIR, "tessdata")
 TESSDATA_URL = "https://github.com/tesseract-ocr/tessdata/raw/main/{}.traineddata"
@@ -125,15 +132,15 @@ OCR_DPI = 300
 OCR_VERSION = "v1"
 OCR_ERROR_FILE = os.path.join(CACHE_DIR, "ocr_errore.txt")
 
-PAGE_GAP = 12.0          # spazio tra pagine (punti PDF)
-ANCHOR_RATIO = 1 / 3     # punto di lettura: a 1/3 dell'altezza della finestra
+PAGE_GAP = 12.0          # space between pages (PDF points)
+ANCHOR_RATIO = 1 / 3     # reading position: at 1/3 of the window height
 MIN_ZOOM, MAX_ZOOM = 0.2, 6.0
-MIN_ANCHOR_CHARS = 5     # blocchi più corti (es. numeri di pagina) non fanno da ancora
-NOTE_ICON = 14.0         # lato icona nota (punti PDF)
+MIN_ANCHOR_CHARS = 5     # shorter blocks (e.g. page numbers) are not used as anchors
+NOTE_ICON = 14.0         # side of the note icon (PDF points)
 UNDO_LIMIT = 50
 
-COLORS = [("Giallo", "#FFD400"), ("Verde", "#7ED957"), ("Azzurro", "#5BC0EB"),
-          ("Rosa", "#FF7EB6"), ("Arancio", "#FFA03A")]
+COLORS = [("Yellow", "#FFD400"), ("Green", "#7ED957"), ("Light blue", "#5BC0EB"),
+          ("Pink", "#FF7EB6"), ("Orange", "#FFA03A")]
 
 LANGS = ["it", "de", "fr", "en", "rm", "es", "pt", "nl", "pl", "cs", "tr", "zh", "ja"]
 LANG_HINTS = {
@@ -151,6 +158,48 @@ STOPWORDS = {
     "en": {"the", "and", "of", "to", "is", "for", "with", "that", "are", "this", "be", "on", "by", "not"},
     "es": {"el", "los", "las", "y", "es", "para", "una", "del", "que", "con", "por", "se", "como", "está"},
 }
+
+
+# --------------------------------------------------------------------------- #
+# Interface language: English source texts, Italian translations in IT_TEXTS
+# (at the end of the file). The language is chosen at start-up (main) and is
+# changed from the Help menu; it takes effect at the next start.
+# --------------------------------------------------------------------------- #
+UI_LANGS = {"en": "English", "it": "Italiano"}
+UI_LANG = "en"
+SETTINGS_FILE = os.path.join(CACHE_DIR, "settings.json")
+
+
+def _t(s: str) -> str:
+    """Interface text in the current language (English is the source language)."""
+    return IT_TEXTS.get(s, s) if UI_LANG == "it" else s
+
+
+def load_settings() -> dict:
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(data: dict):
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    save_json_atomic(SETTINGS_FILE, data)
+
+
+def default_ui_lang() -> str:
+    """Saved choice, otherwise the language of the operating system (Italian -> it, else en)."""
+    saved = load_settings().get("ui_lang")
+    if saved in UI_LANGS:
+        return saved
+    return "it" if QLocale.system().language() == QLocale.Italian else "en"
+
+
+def lang_display(lang: str) -> str:
+    """Name of a document language in the interface language («italiano» / «Italian»)."""
+    return LANG_NAMES_UI.get(lang, lang) if UI_LANG == "it" else LANG_NAMES.get(lang, lang)
 
 
 def color_icon(hex_color: str) -> QIcon:
@@ -171,14 +220,14 @@ def short(text: str, n: int) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Modello documento
+# Document model
 # --------------------------------------------------------------------------- #
 @dataclass
 class Block:
     page: int
-    rect: tuple                                  # (x0, y0, x1, y1) in punti PDF
+    rect: tuple                                  # (x0, y0, x1, y1) in PDF points
     text: str
-    words: list = field(default_factory=list)    # [(x0, y0, x1, y1, parola)] in ordine
+    words: list = field(default_factory=list)    # [(x0, y0, x1, y1, word)] in order
 
 
 def file_hash(path: str) -> str:
@@ -190,8 +239,8 @@ def file_hash(path: str) -> str:
 
 
 def extract_blocks(doc: fitz.Document, ocr=None):
-    """Blocchi di testo (con parole) in ordine di lettura; almeno un blocco per pagina.
-    ocr: {pagina: {"words": [...], "blocks": [...]}} testo riconosciuto per le pagine scansionate."""
+    """Text blocks (with words) in reading order; at least one block per page.
+    ocr: {page: {"words": [...], "blocks": [...]}} text recognised for scanned pages."""
     ocr = ocr or {}
     blocks, page_first = [], []
     for pno, page in enumerate(doc):
@@ -215,14 +264,14 @@ def extract_blocks(doc: fitz.Document, ocr=None):
             ws = [w for _l, _w, w in sorted(by_block.get(bno, []), key=lambda t: (t[0], t[1]))]
             blocks.append(Block(pno, (x0, y0, x1, y1), text, ws))
             found = True
-        if not found:  # pagina senza testo (immagine/scansione): blocco fittizio
+        if not found:  # page without text (image/scan): placeholder block
             r = page.rect
             blocks.append(Block(pno, (0.0, 0.0, r.width, r.height), ""))
     page_first.append(len(blocks))
     return blocks, page_first
 
 
-# ---- OCR delle pagine scansionate (Tesseract integrato in PyMuPDF) ----
+# ---- OCR of scanned pages (Tesseract built into PyMuPDF) ----
 def ocr_langs(lang: str) -> str:
     return OCR_LANGS.get(lang, "eng")
 
@@ -233,7 +282,7 @@ def tessdata_missing(tess: str):
 
 
 def download_tessdata(names):
-    """Scarica i dati di lingua Tesseract (una volta sola) in TESSDATA_DIR."""
+    """Downloads the Tesseract language data (only once) into TESSDATA_DIR."""
     os.makedirs(TESSDATA_DIR, exist_ok=True)
     for t in names:
         out = os.path.join(TESSDATA_DIR, t + ".traineddata")
@@ -243,8 +292,8 @@ def download_tessdata(names):
                 while chunk := r.read(1 << 16):
                     f.write(chunk)
         except (urllib.error.URLError, OSError) as e:
-            raise OSError(f"Download di {t}.traineddata non riuscito: "
-                          f"{getattr(e, 'reason', e)}") from None
+            raise OSError(_t("Download of {name}.traineddata failed: {err}").format(
+                name=t, err=getattr(e, 'reason', e))) from None
         os.replace(out + ".tmp", out)
 
 
@@ -253,7 +302,7 @@ def ocr_cache_path(doc_hash: str, tess: str) -> str:
 
 
 def load_ocr(doc_hash: str, tess: str, complete_only=True) -> dict:
-    """{pagina: {"words", "blocks"}} dalla cache; vuoto se manca (o è incompleta)."""
+    """{page: {"words", "blocks"}} from the cache; empty if missing (or incomplete)."""
     try:
         with open(ocr_cache_path(doc_hash, tess), encoding="utf-8") as f:
             data = json.load(f)
@@ -265,7 +314,7 @@ def load_ocr(doc_hash: str, tess: str, complete_only=True) -> dict:
 
 
 def scanned_pages(doc: fitz.Document, blocks, page_first):
-    """Pagine senza testo con un'immagine grande (scansioni): candidate all'OCR."""
+    """Pages without text but with a large image (scans): candidates for OCR."""
     out = []
     for pno, page in enumerate(doc):
         a, b = page_first[pno], page_first[pno + 1]
@@ -282,9 +331,9 @@ def scanned_pages(doc: fitz.Document, blocks, page_first):
 
 
 def ocr_main(argv) -> int:
-    """Processo separato (PyMuPDF non è utilizzabile da più thread):
-    polyglot_pdf --ocr <pdf> <hash> <lingue tesseract> <pagine separate da virgola>.
-    Salva i risultati nella cache ogni poche pagine (ripresa) e l'avanzamento in <cache>.progress."""
+    """Separate process (PyMuPDF cannot be used from several threads):
+    polyglot_pdf --ocr <pdf> <hash> <tesseract languages> <comma-separated pages>.
+    Saves the results into the cache every few pages (resume) and the progress in <cache>.progress."""
     path, doc_hash, tess, pages_arg = argv[:4]
     pages = [int(p) for p in pages_arg.split(",") if p]
     cache = ocr_cache_path(doc_hash, tess)
@@ -350,12 +399,12 @@ class Document:
         ocr = load_ocr(self.hash, ocr_langs(lang))
         self.blocks, self.page_first = extract_blocks(self.doc, ocr)
         self.ocr_pages = set(ocr)
-        # pagine scansionate ancora da riconoscere (con OCR già fatto non sono più "senza testo")
+        # scanned pages still to be recognised (after OCR they are no longer "without text")
         self.pending_ocr = scanned_pages(self.doc, self.blocks, self.page_first)
         self.pending_ocr = [p for p in self.pending_ocr if p not in ocr]
-        # identifica il testo estratto: cambia quando si aggiunge l'OCR (cache, ancore)
+        # identifies the extracted text: changes when OCR is added (caches, anchors)
         self.text_key = self.hash + ("o" if ocr else "")
-        # indice globale delle parole: (blocco, k, pagina, x0, y0, x1, y1)
+        # global word index: (block, k, page, x0, y0, x1, y1)
         self.wg, self.block_wstart = [], []
         self.page_words = [[] for _ in self.page_sizes]
         for bi, b in enumerate(self.blocks):
@@ -369,7 +418,7 @@ class Document:
     def n(self) -> int:
         return len(self.blocks)
 
-    # ---- posizione continua (indice blocco + frazione) ----
+    # ---- continuous position (block index + fraction) ----
     def pos_from_point(self, pno: int, x: float, y: float) -> float:
         a, b = self.page_first[pno], self.page_first[pno + 1]
         fallback = None
@@ -392,7 +441,7 @@ class Document:
         return float(a)
 
     def point_from_pos(self, pos: float):
-        """-> (pagina, y, indice blocco)."""
+        """-> (page, y, block index)."""
         pos = min(max(pos, 0.0), self.n - 1e-6)
         k = int(pos)
         frac = pos - k
@@ -400,7 +449,7 @@ class Document:
         x0, y0, x1, y1 = b.rect
         return b.page, y0 + frac * (y1 - y0), k
 
-    # ---- parole ----
+    # ---- words ----
     def word_at(self, pno: int, x: float, y: float, nearest: bool = True):
         best, bd = None, float("inf")
         for g in self.page_words[pno]:
@@ -410,7 +459,7 @@ class Document:
             if nearest:
                 dx = max(x0 - x, 0.0, x - x1)
                 dy = max(y0 - y, 0.0, y - y1)
-                d = dx * dx + 9 * dy * dy   # preferisce la stessa riga
+                d = dx * dx + 9 * dy * dy   # prefers the same line
                 if d < bd:
                     best, bd = g, d
         return best
@@ -424,7 +473,7 @@ class Document:
         q = min(max(q, 0.0), self.n - 1e-9)
         b = int(q)
         frac = q - b
-        if end and frac < 1e-9 and b > 0:      # fine esatta di un blocco
+        if end and frac < 1e-9 and b > 0:      # exact end of a block
             b, frac = b - 1, 1.0
         step = -1 if end else 1
         while 0 <= b < self.n and not self.blocks[b].words:
@@ -433,7 +482,7 @@ class Document:
         if not 0 <= b < self.n:
             return None
         K = len(self.blocks[b].words)
-        x = frac * K       # tolleranza: 7 + 3/18 non deve diventare 2,9999… o 3,0000…1 parole
+        x = frac * K       # tolerance: 7 + 3/18 must not become 2.9999… or 3.0000…1 words
         k = max(math.ceil(x - 1e-6) - 1, 0) if end else int(x + 1e-6)
         return self.block_wstart[b] + min(k, K - 1)
 
@@ -448,7 +497,7 @@ class Document:
         return g0, g1
 
     def rects_for_words(self, g0: int, g1: int):
-        """Rettangoli uniti per riga: [[pagina, x0, y0, x1, y1], ...]."""
+        """Rectangles merged per line: [[page, x0, y0, x1, y1], ...]."""
         out, cur = [], None
         for g in range(g0, g1 + 1):
             bi, _k, p, x0, y0, x1, y1 = self.wg[g]
@@ -467,7 +516,7 @@ class Document:
         return " ".join(self.blocks[self.wg[g][0]].words[self.wg[g][1]][4] for g in range(g0, g1 + 1))
 
     def rects_for_pos_range(self, q0: float, q1: float):
-        """Ripiego per blocchi senza parole (pagine scansionate)."""
+        """Fallback for blocks without words (scanned pages)."""
         p0, ya, k0 = self.point_from_pos(q0)
         _p1, yb, k1 = self.point_from_pos(q1)
         x0, y0, x1, y1 = self.blocks[k0].rect
@@ -476,13 +525,13 @@ class Document:
 
 
 # --------------------------------------------------------------------------- #
-# Allineamento tra lingue
+# Alignment between languages
 # --------------------------------------------------------------------------- #
 TOKEN_RE = re.compile(r"\d+(?:[.,]\d+)*|[A-Z][A-Z0-9]+(?:[-/][A-Z0-9]+)*")
 
 
 def lang_free_tokens(text: str) -> set:
-    """Token che restano uguali in tutte le lingue: numeri, sigle, codici."""
+    """Tokens that stay the same in every language: numbers, acronyms, codes."""
     return {t.replace(",", ".") for t in TOKEN_RE.findall(text)}
 
 
@@ -492,22 +541,22 @@ def _word_token(w: str):
 
 
 def _fold(w: str) -> str:
-    """Parola in minuscolo, senza accenti né punteggiatura (per le parole affini)."""
+    """Lower-case word without accents or punctuation (for cognates)."""
     w = unicodedata.normalize("NFKD", w.lower().replace("ß", "ss"))
     return "".join(c for c in w if c.isalnum() and not unicodedata.combining(c))
 
 
 def _in_order(ka_list, kb_list):
-    """Occorrenze appaiate nell'ordine, solo se sono tante quante in entrambi i paragrafi."""
+    """Occurrences paired in order, only if there are as many in both paragraphs."""
     return list(zip(ka_list, kb_list)) if len(ka_list) == len(kb_list) else []
 
 
 def block_word_matches(words_a, words_b) -> dict:
-    """Corrispondenze parola -> parola fra due paragrafi tradotti (anche in ordine diverso):
-    token invarianti (numeri, sigle), punteggiatura (:, ;, parentesi), parole affini
+    """Word -> word correspondences between two translated paragraphs (also in a different
+    order): invariant tokens (numbers, acronyms), punctuation (:, ;, brackets), cognates
     (Sensor/sensore, Intelligentes/intelligente). -> {ka: kb}"""
     pairs = []
-    # 1) numeri, sigle, codici
+    # 1) numbers, acronyms, codes
     ta, tb = defaultdict(list), defaultdict(list)
     for src, dst in ((words_a, ta), (words_b, tb)):
         for k, w in enumerate(src):
@@ -516,12 +565,12 @@ def block_word_matches(words_a, words_b) -> dict:
                 dst[t].append(k)
     for t, ks in ta.items():
         pairs += _in_order(ks, tb.get(t, []))
-    # 2) punteggiatura che chiude o apre una parte di frase
+    # 2) punctuation that closes or opens part of a sentence
     for test in (lambda s: s.endswith(":"), lambda s: s.endswith(";"),
                  lambda s: s.startswith("("), lambda s: s.rstrip(".,;:").endswith(")")):
         pairs += _in_order([k for k, w in enumerate(words_a) if test(w[4])],
                            [k for k, w in enumerate(words_b) if test(w[4])])
-    # 3) parole affini: migliore corrispondenza reciproca fra le forme (>= 4 lettere)
+    # 3) cognates: best mutual match between the word forms (>= 4 letters)
     fa, fb = defaultdict(list), defaultdict(list)
     for src, dst in ((words_a, fa), (words_b, fb)):
         for k, w in enumerate(src):
@@ -544,8 +593,8 @@ def block_word_matches(words_a, words_b) -> dict:
 
 
 def intra_block_map(words_a, words_b, matches=None):
-    """Mappa fine frazione-parola -> frazione-parola fra due paragrafi tradotti,
-    con le corrispondenze di block_word_matches() come punti fissi (solo quelle in ordine)."""
+    """Fine word-fraction -> word-fraction mapping between two translated paragraphs,
+    with the correspondences of block_word_matches() as fixed points (only those in order)."""
     Ka, Kb = len(words_a), len(words_b)
     if not Ka or not Kb:
         return np.array([0.0, 1.0]), np.array([0.0, 1.0])
@@ -612,7 +661,7 @@ def _rows_heuristic(A, B, w):
 
 
 def _longest_increasing(anchors):
-    """Sottosequenza più lunga con indici crescenti in entrambi i documenti."""
+    """Longest subsequence with increasing indices in both documents."""
     tails, tails_idx, prev = [], [], [-1] * len(anchors)
     for k, (_i, j, _s) in enumerate(anchors):
         p = bisect.bisect_left(tails, j)
@@ -631,7 +680,7 @@ def _longest_increasing(anchors):
 
 
 def align_blocks(A, B, EA=None, EB=None):
-    """Restituisce le ancore [(i, j, sim)] tra blocchi di A e di B."""
+    """Returns the anchors [(i, j, sim)] between blocks of A and of B."""
     nA, nB = len(A), len(B)
     if nA == 0 or nB == 0:
         return []
@@ -667,7 +716,7 @@ def align_blocks(A, B, EA=None, EB=None):
 
 
 def build_mapping(anchors, nA, nB):
-    """Funzione monotona a tratti posA -> posB (array xs, ys strettamente crescenti)."""
+    """Piecewise monotonic function posA -> posB (arrays xs, ys strictly increasing)."""
     xs, ys = [0.0], [0.0]
     for i, j, _ in anchors:
         for x, y in ((i, j), (i + 1, j + 1)):
@@ -681,7 +730,7 @@ def build_mapping(anchors, nA, nB):
 
 
 class _STEmbedder:
-    """sentence-transformers nel processo (se installato)."""
+    """sentence-transformers inside the process (if installed)."""
     method, name, batch = "semantico", EMB_MODEL, 256
 
     def __init__(self, model):
@@ -693,7 +742,7 @@ class _STEmbedder:
 
 
 class OllamaEmbedder:
-    """Embedding multilingue da Ollama (/api/embed): nessuna dipendenza Python in più."""
+    """Multilingual embeddings from Ollama (/api/embed): no extra Python dependency."""
     method, name, batch = "semantico-ollama", OLLAMA_EMB_MODEL, 64
 
     def encode(self, texts):
@@ -708,24 +757,25 @@ _ST_FAILED = False
 
 
 def get_embedding_model(progress=lambda s: None):
-    """sentence-transformers se installato, altrimenti Ollama; None = allineamento euristico."""
+    """sentence-transformers if installed, otherwise Ollama; None = heuristic alignment."""
     global _ST_MODEL, _ST_FAILED
     if _ST_MODEL is None and not _ST_FAILED:
         try:
             from sentence_transformers import SentenceTransformer
-            progress("Caricamento modello semantico (al primo avvio viene scaricato)…")
+            progress(_t("Loading the semantic model (downloaded at the first start)…"))
             _ST_MODEL = _STEmbedder(SentenceTransformer(EMB_MODEL))
         except ImportError:
             _ST_FAILED = True
-        except Exception as e:  # rete assente, ecc.
+        except Exception as e:  # no network, etc.
             _ST_FAILED = True
-            progress(f"Modello semantico non disponibile: {e}")
+            progress(_t("Semantic model not available: {err}").format(err=e))
     if _ST_MODEL is not None:
         return _ST_MODEL
-    try:                       # Ollama può essere avviato dopo: si ricontrolla ogni volta
+    try:                       # Ollama may be started later: checked again every time
         if any(m.split(":")[0] == OLLAMA_EMB_MODEL for m in ollama_models()):
             return OllamaEmbedder()
-        progress(f"Allineamento euristico (per quello semantico: ollama pull {OLLAMA_EMB_MODEL})")
+        progress(_t("Heuristic alignment (for the semantic one: ollama pull {model})").format(
+            model=OLLAMA_EMB_MODEL))
     except OSError:
         pass
     return None
@@ -780,7 +830,7 @@ class AlignWorker(QThread):
                 except (OSError, ValueError):
                     anchors = None
             if anchors is None:
-                self.progress.emit(f"Allineamento {la.upper()} ↔ {lb.upper()}…")
+                self.progress.emit(_t("Alignment {a} ↔ {b}…").format(a=la.upper(), b=lb.upper()))
                 EA = EB = None
                 if model is not None:
                     try:
@@ -790,8 +840,8 @@ class AlignWorker(QThread):
                                 if embs[lang] is None:
                                     return
                         EA, EB = embs[la], embs[lb]
-                    except OSError as e:          # es. Ollama chiuso a metà: ripiego euristico
-                        self.progress.emit(f"Allineamento semantico non riuscito ({e}): euristico")
+                    except OSError as e:          # e.g. Ollama closed half-way: heuristic fallback
+                        self.progress.emit(_t("Semantic alignment failed ({err}): heuristic").format(err=e))
                         model, method = None, "euristico"
                         cache = os.path.join(CACHE_DIR, f"align_{ha}_{hb}_{method}_{ALIGN_VERSION}.json")
                 anchors = align_blocks(A, B, EA, EB)
@@ -801,11 +851,11 @@ class AlignWorker(QThread):
                 except OSError:
                     pass
             xs, ys = build_mapping(anchors, len(A), len(B))
-            self.pair_done.emit(la, lb, ha, hb, xs, ys, len(anchors), METHOD_LABELS.get(method, method))
+            self.pair_done.emit(la, lb, ha, hb, xs, ys, len(anchors), _t(METHOD_LABELS.get(method, method)))
 
 
 # --------------------------------------------------------------------------- #
-# Passo 3: generazione di una lingua mancante (LLM locale via Ollama)
+# Step 3: generation of a missing language (local LLM via Ollama)
 # --------------------------------------------------------------------------- #
 LANG_NAMES = {"it": "Italian", "de": "German", "fr": "French", "en": "English", "rm": "Romansh",
               "es": "Spanish", "pt": "Portuguese", "nl": "Dutch", "pl": "Polish", "cs": "Czech",
@@ -815,17 +865,17 @@ LANG_NAMES_UI = {"it": "italiano", "de": "tedesco", "fr": "francese", "en": "ing
                  "pl": "polacco", "cs": "ceco", "tr": "turco", "zh": "cinese", "ja": "giapponese"}
 TR_MODELS = ["translategemma:4b", "translategemma:12b"]
 TR_VERSION = "v1"
-TR_MAX_CHARS = 1500          # paragrafi più lunghi vengono spezzati per frase
+TR_MAX_CHARS = 1500          # longer paragraphs are split by sentence
 GEN_MAP_EXT = ".polymap.json"
 HYPHEN_KEEP = {"und", "oder", "bzw", "sowie", "e", "ed", "o", "et", "ou", "and", "or"}
 
 
-OLLAMA_OPTIONS = {"temperature": 0, "num_ctx": 4096}   # cambiarle fa ricaricare il modello (~30 s)
+OLLAMA_OPTIONS = {"temperature": 0, "num_ctx": 4096}   # changing them reloads the model (~30 s)
 
 
 def ollama_base() -> str:
-    # 127.0.0.1 e non «localhost»: su Windows «localhost» prova prima IPv6 (::1), dove Ollama
-    # non ascolta, e ogni richiesta perde ~2 s prima di ripiegare su IPv4.
+    # 127.0.0.1 and not «localhost»: on Windows «localhost» tries IPv6 (::1) first, where Ollama
+    # does not listen, and every request loses ~2 s before falling back to IPv4.
     h = (os.environ.get("OLLAMA_HOST", "").strip() or "127.0.0.1:11434").rstrip("/")
     h = re.sub(r"^(https?://)?(localhost|0\.0\.0\.0)(?=[:/]|$)", r"\g<1>127.0.0.1", h)
     if not h.startswith(("http://", "https://")):
@@ -848,31 +898,32 @@ def _ollama_open(path, payload=None, timeout=10.0):
             msg = str(e)
         raise OSError(msg) from None
     except urllib.error.URLError as e:
-        raise OSError(f"Ollama non raggiungibile su {ollama_base()} ({e.reason})") from None
+        raise OSError(_t("Ollama not reachable at {url} ({reason})").format(
+            url=ollama_base(), reason=e.reason)) from None
 
 
 def ollama_models():
-    """Modelli installati in Ollama; OSError se il server non risponde."""
+    """Models installed in Ollama; OSError if the server does not answer."""
     with _ollama_open("/api/tags", timeout=3) as r:
         return sorted(m["name"] for m in json.loads(r.read().decode("utf-8")).get("models", []))
 
 
 def ollama_loaded(model) -> bool:
-    """Il modello è già in memoria (risposta in pochi secondi) o va caricato (30–60 s)?"""
+    """Is the model already in memory (answer in a few seconds) or must it be loaded (30–60 s)?"""
     with _ollama_open("/api/ps", timeout=3) as r:
         names = [m.get("name", "") for m in json.loads(r.read().decode("utf-8")).get("models", [])]
     return any(n == model or n == model + ":latest" for n in names)
 
 
 def ollama_preload(model):
-    """Carica il modello in memoria senza generare nulla (stesse opzioni della traduzione)."""
+    """Loads the model into memory without generating anything (same options as translation)."""
     with _ollama_open("/api/generate", {"model": model, "keep_alive": "30m", "options": OLLAMA_OPTIONS},
                       timeout=300) as r:
         r.read()
 
 
 def ollama_generate(model, prompt, stop=lambda: False, timeout=600.0, on_token=None) -> str:
-    """Risposta in streaming: interrompibile fra un token e l'altro (on_token: ogni pezzo)."""
+    """Streaming answer: can be interrupted between two tokens (on_token: every piece)."""
     payload = {"model": model, "prompt": prompt, "stream": True, "keep_alive": "30m",
                "options": OLLAMA_OPTIONS}
     parts = []
@@ -894,7 +945,7 @@ def ollama_generate(model, prompt, stop=lambda: False, timeout=600.0, on_token=N
 
 
 def parse_glossary(text):
-    """Una voce per riga: «termine sorgente = traduzione» (anche → , -> o tab). # = commento."""
+    """One entry per line: «source term = translation» (also → , -> or tab). # = comment."""
     out = []
     for line in (text or "").splitlines():
         line = line.strip()
@@ -910,7 +961,7 @@ def parse_glossary(text):
 
 
 def translation_prompt(text, src, tgt, glossary=()):
-    """Prompt raccomandato per TranslateGemma, con regole su codici e glossario."""
+    """Prompt recommended for TranslateGemma, with rules on codes and glossary."""
     S, T = LANG_NAMES.get(src, src), LANG_NAMES.get(tgt, tgt)
     low = text.lower()
     terms = [(a, b) for a, b in glossary if a.lower() in low]
@@ -926,7 +977,7 @@ def translation_prompt(text, src, tgt, glossary=()):
 
 
 def source_text(words) -> str:
-    """Testo da tradurre, con le parole spezzate a fine riga ricongiunte."""
+    """Text to translate, with the words hyphenated at the end of a line joined again."""
     s, glue = "", False
     for k, (_x0, y0, _x1, y1, t) in enumerate(words):
         if s and not glue:
@@ -940,7 +991,7 @@ def source_text(words) -> str:
 
 
 def _cluster_lines(words):
-    """Parole raggruppate per riga visiva, ciascuna riga ordinata da sinistra a destra."""
+    """Words grouped by visual line, each line sorted from left to right."""
     lines = []
     for w in sorted(words, key=lambda w: ((w[1] + w[3]) / 2, w[0])):
         cy = (w[1] + w[3]) / 2
@@ -957,8 +1008,8 @@ def _bbox(words):
 
 
 def block_cells(b: Block):
-    """Il blocco intero, oppure le sue celle se PyMuPDF ha unito più celle di una tabella
-    (parole sulla stessa riga separate da grandi spazi)."""
+    """The whole block, or its cells if PyMuPDF merged several cells of a table
+    (words on the same line separated by large gaps)."""
     lines = _cluster_lines(b.words)
     segs, split = [], False
     for li, ws in enumerate(lines):
@@ -972,7 +1023,7 @@ def block_cells(b: Block):
         segs.append((li, cur))
     if not split:
         return [b.words]
-    cells = []      # [ultima riga, x0, x1, parole]: segmenti sovrapposti di righe consecutive
+    cells = []      # [last line, x0, x1, words]: overlapping segments of consecutive lines
     for li, ws in segs:
         x0, x1 = min(w[0] for w in ws), max(w[2] for w in ws)
         for c in cells:
@@ -986,8 +1037,8 @@ def block_cells(b: Block):
 
 
 def doc_units(d: Document):
-    """Unità di traduzione: [(chiave, blocco, rettangolo, parole)].
-    Chiave "i" per un blocco intero, "i.k" per la cella k di una riga di tabella."""
+    """Translation units: [(key, block, rectangle, words)].
+    Key "i" for a whole block, "i.k" for cell k of a table row."""
     if getattr(d, "_units", None) is None:
         out = []
         for i, b in enumerate(d.blocks):
@@ -1004,13 +1055,13 @@ def doc_units(d: Document):
 
 
 def needs_translation(text: str) -> bool:
-    """False per blocchi fatti solo di numeri, sigle e codici (es. numeri di pagina)."""
+    """False for blocks made only of numbers, acronyms and codes (e.g. page numbers)."""
     return bool(re.search(r"[^\W\d_]{2,}", TOKEN_RE.sub(" ", text)))
 
 
 def missing_tokens(src: str, dst: str):
-    """Numeri/sigle/codici dell'originale che non compaiono nella traduzione.
-    Le parole maiuscole lunghe (ATTENZIONE, PERICOLO…) si traducono: non contano."""
+    """Numbers/acronyms/codes of the original that do not appear in the translation.
+    Long upper-case words (ATTENZIONE, PERICOLO…) are translated: they do not count."""
     return sorted(t for t in lang_free_tokens(src) - lang_free_tokens(dst)
                   if not (t.isalpha() and len(t) > 5))
 
@@ -1039,7 +1090,7 @@ def clean_llm_output(s: str, src: str) -> str:
 
 
 def ollama_translate(text, src, tgt, model, glossary=(), stop=lambda: False, on_partial=None) -> str:
-    """on_partial(testo finora): traduzione parziale mentre arriva (per mostrarla subito)."""
+    """on_partial(text so far): partial translation while it arrives (to show it at once)."""
     out = []
     for chunk in split_text(text):
         cur = []
@@ -1055,13 +1106,13 @@ def ollama_translate(text, src, tgt, model, glossary=(), stop=lambda: False, on_
 
 
 def translation_models(models):
-    """Modelli adatti alla traduzione fra quelli installati (TranslateGemma per primi)."""
+    """Models suitable for translation among the installed ones (TranslateGemma first)."""
     return [m for m in models if "translategemma" in m]
 
 
 class OllamaProbe(QThread):
-    """Controllo in background: Ollama risponde? quali modelli ci sono?"""
-    result = Signal(bool, object, str)        # raggiungibile, modelli, errore
+    """Background check: does Ollama answer? which models are there?"""
+    result = Signal(bool, object, str)        # reachable, models, error
 
     def run(self):
         try:
@@ -1071,8 +1122,8 @@ class OllamaProbe(QThread):
 
 
 class ModelPreloader(QThread):
-    """Carica in background il modello di traduzione appena si seleziona del testo,
-    così l'attesa del caricamento (30–60 s) avviene mentre si sceglie dal menu."""
+    """Loads the translation model in the background as soon as some text is selected,
+    so the loading wait (30–60 s) happens while the user picks from the menu."""
 
     def __init__(self, model, parent=None):
         super().__init__(parent)
@@ -1087,7 +1138,7 @@ class ModelPreloader(QThread):
 
 
 class SelectionTranslateWorker(QThread):
-    """Traduzione al volo del testo selezionato (mostrata mentre arriva)."""
+    """On-the-fly translation of the selected text (shown while it arrives)."""
     partial = Signal(str)
     done = Signal(str)
     failed = Signal(str)
@@ -1100,7 +1151,7 @@ class SelectionTranslateWorker(QThread):
         stop = self.isInterruptionRequested
         try:
             if not ollama_loaded(self.model):
-                self.partial.emit("Caricamento del modello in memoria (30–60 s, solo la prima volta)")
+                self.partial.emit(_t("Loading the model into memory (30–60 s, only the first time)"))
         except OSError:
             pass
         try:
@@ -1124,7 +1175,7 @@ def fmt_duration(s: float) -> str:
 
 
 def default_output_path(src_path, src, tgt):
-    """manuale_it.pdf -> manuale_de.pdf (oppure manuale_de.pdf da manuale.pdf)."""
+    """manual_it.pdf -> manual_de.pdf (or manual_de.pdf from manual.pdf)."""
     folder, name = os.path.split(src_path)
     stem = os.path.splitext(name)[0]
     new, n = re.subn(rf"(?i)(?<![a-z]){re.escape(src)}(?![a-z])", tgt, stem)
@@ -1152,7 +1203,7 @@ def save_json_atomic(path, data):
 
 
 class TranslationCache:
-    """Traduzioni per paragrafo (hash documento + blocco + lingue + modello): permette la ripresa."""
+    """Translations per paragraph (document hash + block + languages + model): allows resuming."""
 
     def __init__(self, doc_hash, src, tgt, model):
         safe = re.sub(r"[^\w.-]+", "_", model)
@@ -1172,7 +1223,7 @@ class TranslationCache:
                              "warn": missing_tokens(text, translation), "sec": round(sec, 2)}
 
     def rate(self):
-        """Secondi per carattere misurati finora (None se non ci sono dati)."""
+        """Seconds per character measured so far (None if there is no data)."""
         timed = [e for e in self.data.values() if e.get("sec")]
         chars = sum(len(e["src"]) for e in timed)
         return sum(e["sec"] for e in timed) / chars if chars else None
@@ -1185,11 +1236,11 @@ class TranslationCache:
 
 
 class TranslateWorker(QThread):
-    progress = Signal(int, int, float, str)     # fatti, totale, secondi rimanenti (-1 = ?), ultimo
+    progress = Signal(int, int, float, str)     # done, total, seconds left (-1 = ?), last one
 
     def __init__(self, cache, items, src, tgt, model, glossary, force=False, parent=None):
         super().__init__(parent)
-        self.cache, self.items = cache, items     # items: [(indice blocco, testo)]
+        self.cache, self.items = cache, items     # items: [(block index, text)]
         self.src, self.tgt, self.model, self.glossary, self.force = src, tgt, model, glossary, force
         self.error = None
         self.completed = False
@@ -1224,9 +1275,9 @@ class TranslateWorker(QThread):
             self.cache.save()
 
 
-# ---- ricostruzione del PDF tradotto ----
+# ---- rebuilding the translated PDF ----
 def _drawing_obstacles(page):
-    """Segmenti della grafica vettoriale (linee, bordi di riquadri e tabelle)."""
+    """Segments of the vector graphics (lines, borders of boxes and tables)."""
     out = []
     try:
         paths = page.get_drawings()
@@ -1248,12 +1299,12 @@ def _drawing_obstacles(page):
 
 
 def _free_box(rect, obstacles, bounds, centered=False):
-    """Allarga il riquadro del blocco verso destra (e in basso) finché c'è spazio libero."""
+    """Widens the block box to the right (and downwards) while there is free space."""
     x0, y0, x1, y1 = rect
     bx0, _by0, bx1, by1 = bounds
     right, left = max(x1, bx1), min(x0, bx0)
     for o in obstacles:
-        if o[1] < y1 - 0.5 and o[3] > y0 + 0.5:          # sovrapposti in verticale
+        if o[1] < y1 - 0.5 and o[3] > y0 + 0.5:          # overlapping vertically
             if o[0] >= x1 - 0.5:
                 right = min(right, o[0] - 2)
             if o[2] <= x0 + 0.5:
@@ -1273,12 +1324,12 @@ def _free_box(rect, obstacles, bounds, centered=False):
 
 
 def _block_lines(words):
-    """Righe: [(y centro, x0, x1)]."""
+    """Lines: [(y centre, x0, x1)]."""
     return [((ws[0][1] + ws[0][3]) / 2, ws[0][0], max(w[2] for w in ws)) for ws in _cluster_lines(words)]
 
 
 def _block_style(rect, words, spans, bounds):
-    """Stile prevalente: dimensione, colore, grassetto/corsivo, interlinea, allineamento."""
+    """Prevailing style: size, colour, bold/italic, line spacing, alignment."""
     x0, y0, x1, y1 = rect
     cnt = Counter()
     for s in spans:
@@ -1299,7 +1350,7 @@ def _block_style(rect, words, spans, bounds):
         diffs = sorted(lines[k + 1][0] - lines[k][0] for k in range(len(lines) - 1))
         lh = min(max(diffs[len(diffs) // 2] / max(size, 1.0), 1.0), 1.8)
     bx0, _by0, bx1, _by1 = bounds
-    colw, colc = max(bx1 - bx0, 1.0), (bx0 + bx1) / 2      # colonna di testo della pagina
+    colw, colc = max(bx1 - bx0, 1.0), (bx0 + bx1) / 2      # text column of the page
     cx, align = (x0 + x1) / 2, "left"
     if len(lines) >= 3 and all(x1 - ln[2] < 2.5 for ln in lines[:-1]):
         align = "justify"
@@ -1311,15 +1362,15 @@ def _block_style(rect, words, spans, bounds):
 
 
 def _ocr_font_size(words) -> float:
-    """Pagine scansionate: dimensione del carattere stimata dall'altezza delle righe
-    (le parole OCR sono rettangoli stretti attorno ai glifi: ~0,93 em per una parola
-    con ascendenti e discendenti, la più alta della riga)."""
+    """Scanned pages: font size estimated from the height of the lines
+    (OCR words are tight rectangles around the glyphs: ~0.93 em for a word
+    with ascenders and descenders, the tallest of the line)."""
     hs = sorted(max(w[3] - w[1] for w in ln) for ln in _cluster_lines(words))
     return max(hs[len(hs) // 2] / 0.93, 4.0) if hs else 10.0
 
 
 def _background(page, rect):
-    """Colore di fondo attorno a un riquadro (mediana dei pixel: il testo è la minoranza)."""
+    """Background colour around a box (median of the pixels: text is the minority)."""
     pix = page.get_pixmap(clip=fitz.Rect(rect) + (-3, -3, 3, 3), dpi=72, colorspace=fitz.csRGB)
     px = np.frombuffer(pix.samples, dtype=np.uint8).reshape(-1, pix.n)[:, :3]
     return tuple(float(v) / 255 for v in np.median(px, axis=0)) if len(px) else (1.0, 1.0, 1.0)
@@ -1334,9 +1385,9 @@ def _apply_redactions(page):
 
 
 def _insert_translation(page, box, text, st, top, scratch):
-    """Scrive il testo nel riquadro; la prima riga viene allineata a «top» (bordo superiore
-    delle parole originali) misurando prima l'impaginazione su una pagina di prova."""
-    css = ("body {margin: 0; padding: 0;} "       # MuPDF non applica il selettore *
+    """Writes the text into the box; the first line is aligned to «top» (upper edge
+    of the original words) after measuring the layout on a scratch page."""
+    css = ("body {margin: 0; padding: 0;} "       # MuPDF does not apply the * selector
            f"p {{margin: 0; padding: 0; font-family: {'serif' if st['serif'] else 'sans-serif'}; "
            f"font-size: {st['size']:g}px; line-height: {st['lh']:.2f}; color: #{st['color']:06x}; "
            f"text-align: {st['align']};"
@@ -1356,8 +1407,8 @@ def _insert_translation(page, box, text, st, top, scratch):
 
 
 def render_translated_pdf(src: Document, translations: dict, out_path: str, pages=None) -> dict:
-    """Copia il PDF sorgente sostituendo il testo delle unità tradotte (immagini e grafica
-    restano intatte). pages: solo queste pagine (anteprima). -> {chiave: riquadro usato}."""
+    """Copies the source PDF replacing the text of the translated units (images and graphics
+    stay untouched). pages: only these pages (preview). -> {key: box used}."""
     out = fitz.open(src.path)
     scratch = fitz.open()
     boxes = {}
@@ -1375,7 +1426,7 @@ def render_translated_pdf(src: Document, translations: dict, out_path: str, page
             continue
         page = out[pno]
         H = page.rect.height
-        scanned = pno in getattr(src, "ocr_pages", ())   # testo riconosciuto con l'OCR
+        scanned = pno in getattr(src, "ocr_pages", ())   # text recognised with OCR
         rects = page_rects[pno]
         rv = list(rects.values())
         bounds = (min(r[0] for r in rv), 0.0, max(r[2] for r in rv),
@@ -1384,7 +1435,7 @@ def render_translated_pdf(src: Document, translations: dict, out_path: str, page
             images = [tuple(im["bbox"]) for im in page.get_image_info()]
         except Exception:
             images = []
-        if scanned:     # la scansione occupa tutta la pagina: non è un ostacolo
+        if scanned:     # the scan covers the whole page: it is not an obstacle
             images = [im for im in images if abs(fitz.Rect(im) & page.rect) < 0.3 * abs(page.rect)]
         others = _drawing_obstacles(page) + images
         spans = [] if scanned else [s for blk in page.get_text("dict")["blocks"]
@@ -1397,11 +1448,11 @@ def render_translated_pdf(src: Document, translations: dict, out_path: str, page
                 st["size"] = _ocr_font_size(ws)
             obst = others + [r for k, r in rects.items() if k != key]
             plan.append((key, _free_box(rect, obst, bounds, st["align"] == "center"), st))
-            if scanned:     # il testo è nell'immagine: lo si copre col colore di fondo
+            if scanned:     # the text is inside the image: it is covered with the background colour
                 r = fitz.Rect(_bbox(ws)) + (-1.5, -1.5, 1.5, 1.5)
                 covers.append((r, _background(page, r)))
                 continue
-            for line in _cluster_lines(ws):          # si tolgono solo le righe dell'unità
+            for line in _cluster_lines(ws):          # only the lines of the unit are removed
                 x0, y0, x1, y1 = _bbox(line)
                 h = y1 - y0
                 page.add_redact_annot(fitz.Rect(x0, y0 + 0.2 * h, x1, y1 - 0.2 * h), fill=False)
@@ -1423,7 +1474,7 @@ def render_translated_pdf(src: Document, translations: dict, out_path: str, page
 
 
 def exact_anchors(entries, tgt: Document):
-    """Ancore esatte sorgente -> PDF generato, dai riquadri del file di corrispondenza."""
+    """Exact source -> generated PDF anchors, from the boxes of the mapping file."""
     by_page = defaultdict(list)
     for e in entries:
         by_page[e["page"]].append(e)
@@ -1441,7 +1492,7 @@ def exact_anchors(entries, tgt: Document):
     return _longest_increasing(anchors)
 
 
-# ---- dialoghi ----
+# ---- dialogs ----
 class GenerateDialog(QDialog):
     def __init__(self, win, models, ollama_error):
         super().__init__(win)
@@ -1451,7 +1502,7 @@ class GenerateDialog(QDialog):
         self.gl = dict(win.glossaries)
         self._pair = None
         self._out_auto = True
-        self.setWindowTitle("Genera lingua mancante")
+        self.setWindowTitle(_t("Generate missing language"))
         self.setMinimumWidth(560)
 
         self.src = QComboBox()
@@ -1466,38 +1517,38 @@ class GenerateDialog(QDialog):
         self.model.setEditable(True)
         self.model.addItems(list(dict.fromkeys([m for m in models if "translategemma" in m]
                                                + TR_MODELS + models)))
-        self.test = QCheckBox("Solo prova sulle prime")
+        self.test = QCheckBox(_t("Only a test on the first"))
         self.pages = QSpinBox()
         self.pages.setRange(1, 50)
         self.pages.setValue(3)
         row_test = QHBoxLayout()
         row_test.addWidget(self.test)
         row_test.addWidget(self.pages)
-        row_test.addWidget(QLabel("pagine, con stima del tempo totale"))
+        row_test.addWidget(QLabel(_t("pages, with an estimate of the total time")))
         row_test.addStretch(1)
         self.out = QLineEdit()
-        browse = QPushButton("Sfoglia…")
+        browse = QPushButton(_t("Browse…"))
         browse.clicked.connect(self._browse)
         row_out = QHBoxLayout()
         row_out.addWidget(self.out, 1)
         row_out.addWidget(browse)
         self.gloss = QPlainTextEdit()
-        self.gloss.setPlaceholderText("Una voce per riga, ad esempio:\nquadro elettrico = Schaltschrank\n"
-                                      "sezionatore = Trennschalter\n# le righe con # sono commenti")
+        self.gloss.setPlaceholderText(_t("One entry per line, for example:\ncontrol cabinet = Schaltschrank\n"
+                                         "disconnector = Trennschalter\n# lines starting with # are comments"))
         self.gloss.setMinimumHeight(110)
         self.info = QLabel()
         self.info.setWordWrap(True)
         self.info.setTextFormat(Qt.RichText)
 
         form = QFormLayout()
-        form.addRow("Lingua sorgente:", self.src)
-        form.addRow("Lingua da generare:", self.tgt)
-        form.addRow("Modello Ollama:", self.model)
+        form.addRow(_t("Source language:"), self.src)
+        form.addRow(_t("Language to generate:"), self.tgt)
+        form.addRow(_t("Ollama model:"), self.model)
         form.addRow("", row_test)
-        form.addRow("File PDF generato:", row_out)
-        form.addRow("Glossario:", self.gloss)
+        form.addRow(_t("Generated PDF file:"), row_out)
+        form.addRow(_t("Glossary:"), self.gloss)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.button(QDialogButtonBox.Ok).setText("Avvia")
+        bb.button(QDialogButtonBox.Ok).setText(_t("Start"))
         bb.accepted.connect(self._accept)
         bb.rejected.connect(self.reject)
         lay = QVBoxLayout(self)
@@ -1515,7 +1566,7 @@ class GenerateDialog(QDialog):
         return self.src.currentData(), self.tgt.currentText().strip().lower()
 
     def _browse(self):
-        path, _ = QFileDialog.getSaveFileName(self, "PDF generato", self.out.text(), "PDF (*.pdf)")
+        path, _ = QFileDialog.getSaveFileName(self, _t("Generated PDF"), self.out.text(), "PDF (*.pdf)")
         if path:
             self.out.setText(path if path.lower().endswith(".pdf") else path + ".pdf")
             self._out_auto = False
@@ -1524,7 +1575,7 @@ class GenerateDialog(QDialog):
         src, tgt = self._langs()
         model = self.model.currentText().strip()
         pair = f"{src}>{tgt}"
-        if pair != self._pair:                         # glossario della coppia di lingue
+        if pair != self._pair:                         # glossary of the language pair
             if self._pair is not None:
                 self.gl[self._pair] = self.gloss.toPlainText()
             self.gloss.setPlainText(self.gl.get(pair, ""))
@@ -1537,15 +1588,19 @@ class GenerateDialog(QDialog):
         done = sum(1 for i, t in items if cache.get(i, t))
         if first:
             self.test.setChecked(done == 0)
-        msgs = [f"{len(d.page_sizes)} pagine, {len(items)} paragrafi da tradurre"
-                + (f" — <b>già tradotti {done}</b> (si riprende da lì)" if done else "") + "."]
+        npages = len(d.page_sizes)
+        msgs = [(_t("{pages} pages, {n} paragraphs to translate") if npages != 1 else
+                 _t("1 page, {n} paragraphs to translate")).format(pages=npages, n=len(items))
+                + (_t(" — <b>{done} already translated</b> (it resumes from there)").format(done=done)
+                   if done else "") + "."]
         if self.ollama_error:
-            msgs.append(f"<span style='color:#c0392b'>⚠ {html.escape(self.ollama_error)}<br>"
-                        "Installa Ollama da https://ollama.com, avvialo e poi esegui: "
-                        f"<code>ollama pull {html.escape(model or TR_MODELS[0])}</code></span>")
+            msgs.append(_t("<span style='color:#c0392b'>⚠ {err}<br>"
+                           "Install Ollama from https://ollama.com, start it and then run: "
+                           "<code>ollama pull {model}</code></span>").format(
+                err=html.escape(self.ollama_error), model=html.escape(model or TR_MODELS[0])))
         elif model and model not in self.models and f"{model}:latest" not in self.models:
-            msgs.append(f"<span style='color:#c0392b'>⚠ Modello non installato. Esegui: "
-                        f"<code>ollama pull {html.escape(model)}</code></span>")
+            msgs.append(_t("<span style='color:#c0392b'>⚠ Model not installed. Run: "
+                           "<code>ollama pull {model}</code></span>").format(model=html.escape(model)))
         self.info.setText("<br>".join(msgs))
 
     def _accept(self):
@@ -1553,16 +1608,16 @@ class GenerateDialog(QDialog):
         out = os.path.abspath(self.out.text().strip()) if self.out.text().strip() else ""
         err = None
         if not re.fullmatch(r"[a-z]{2,3}", tgt or ""):
-            err = "Indica la lingua da generare con il codice di 2–3 lettere (es. de, fr, en)."
+            err = _t("Enter the language to generate as a 2–3 letter code (e.g. de, fr, en).")
         elif tgt == src:
-            err = "La lingua da generare deve essere diversa dalla sorgente."
+            err = _t("The language to generate must be different from the source.")
         elif not self.model.currentText().strip():
-            err = "Indica il modello Ollama."
+            err = _t("Enter the Ollama model.")
         elif not out.lower().endswith(".pdf"):
-            err = "Indica il file PDF da generare."
+            err = _t("Enter the PDF file to generate.")
         elif any(os.path.normcase(d.path) == os.path.normcase(out)
                  for l, d in self.win.docs.items() if l != tgt):
-            err = "Il file indicato è già un documento del progetto in un'altra lingua."
+            err = _t("The chosen file is already a document of the project in another language.")
         if err:
             QMessageBox.warning(self, APP_NAME, err)
             return
@@ -1580,24 +1635,24 @@ class GenerateDialog(QDialog):
 class TranslationEditDialog(QDialog):
     def __init__(self, parent, src_lang, tgt_lang, original, translation, warn):
         super().__init__(parent)
-        self.setWindowTitle("Modifica traduzione del paragrafo")
+        self.setWindowTitle(_t("Edit paragraph translation"))
         self.resize(620, 420)
         lay = QVBoxLayout(self)
-        lay.addWidget(QLabel(f"Originale ({src_lang.upper()}):"))
+        lay.addWidget(QLabel(_t("Original ({lang}):").format(lang=src_lang.upper())))
         orig = QPlainTextEdit(original)
         orig.setReadOnly(True)
         orig.setMaximumHeight(150)
         lay.addWidget(orig)
-        lay.addWidget(QLabel(f"Traduzione ({tgt_lang.upper()}):"))
+        lay.addWidget(QLabel(_t("Translation ({lang}):").format(lang=tgt_lang.upper())))
         self.edit = QPlainTextEdit(translation)
         lay.addWidget(self.edit, 1)
         if warn:
-            w = QLabel("⚠ Non ritrovati nella traduzione: " + ", ".join(warn))
+            w = QLabel(_t("⚠ Not found in the translation: ") + ", ".join(warn))
             w.setStyleSheet("color:#c0392b;")
             w.setWordWrap(True)
             lay.addWidget(w)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.button(QDialogButtonBox.Ok).setText("Applica e rigenera la pagina")
+        bb.button(QDialogButtonBox.Ok).setText(_t("Apply and regenerate the page"))
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
@@ -1607,10 +1662,10 @@ class TranslationEditDialog(QDialog):
 
 
 # --------------------------------------------------------------------------- #
-# Elementi grafici delle annotazioni
+# Graphic items of the annotations
 # --------------------------------------------------------------------------- #
 class HighlightItem(QGraphicsItem):
-    """Evidenziazione in stile pennarello (moltiplica: il testo resta nero)."""
+    """Marker-style highlight (multiply: the text stays black)."""
 
     def __init__(self, ann_id, rects, color, approx, tip):
         super().__init__()
@@ -1687,10 +1742,10 @@ class NoteIconItem(QGraphicsItem):
 
 
 class TranslationPopup(QFrame):
-    """Riquadro stile nota con la traduzione della selezione: figlio della vista, ancorato
-    alla selezione (segue scorrimento e zoom) e chiuso quando la selezione sparisce."""
-    retarget = Signal(str)           # nuova lingua di destinazione
-    save_note = Signal(str)          # salva la traduzione come evidenziazione con nota
+    """Note-like box with the translation of the selection: child of the view, anchored
+    to the selection (follows scrolling and zoom) and closed when the selection disappears."""
+    retarget = Signal(str)           # new target language
+    save_note = Signal(str)          # saves the translation as a highlight with note
 
     def __init__(self, src, tgt, model, parent):
         super().__init__(parent)
@@ -1710,19 +1765,19 @@ class TranslationPopup(QFrame):
         sh.setColor(QColor(0, 0, 0, 90))
         self.setGraphicsEffect(sh)
 
-        head = QLabel(f"Traduzione {src.upper()} →")
+        head = QLabel(_t("Translation {lang} →").format(lang=src.upper()))
         head.setObjectName("trhead")
         self.tgt = QComboBox()
         self.tgt.addItems([l.upper() for l in LANGS if l != src])
         self.tgt.setCurrentText(tgt.upper())
-        self.tgt.setToolTip("Lingua di destinazione")
+        self.tgt.setToolTip(_t("Target language"))
         self.tgt.currentTextChanged.connect(lambda t: self.retarget.emit(t.lower()))
         model_lbl = QLabel(model)
         model_lbl.setObjectName("trhead")
         close = QToolButton()
         close.setText("✕")
         close.setAutoRaise(True)
-        close.setToolTip("Chiudi (Esc)")
+        close.setToolTip(_t("Close (Esc)"))
         close.clicked.connect(self.close_requested)
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
@@ -1732,14 +1787,14 @@ class TranslationPopup(QFrame):
         top.addWidget(model_lbl)
         top.addWidget(close)
 
-        self.text = QLabel("Traduzione in corso…")
+        self.text = QLabel(_t("Translating…"))
         self.text.setWordWrap(True)
         self.text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.text.setMinimumHeight(20)
-        self.btn_copy = QPushButton("Copia")
+        self.btn_copy = QPushButton(_t("Copy"))
         self.btn_copy.clicked.connect(lambda: QApplication.clipboard().setText(self.result))
-        self.btn_note = QPushButton("Salva come nota")
-        self.btn_note.setToolTip("Evidenzia la selezione e salva la traduzione nella nota")
+        self.btn_note = QPushButton(_t("Save as note"))
+        self.btn_note.setToolTip(_t("Highlights the selection and saves the translation in the note"))
         self.btn_note.clicked.connect(lambda: self.save_note.emit(self.result))
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
@@ -1771,7 +1826,7 @@ class TranslationPopup(QFrame):
 
     def set_result(self, s):
         self.result = s
-        self.text.setText(s or "(traduzione vuota)")
+        self.text.setText(s or _t("(empty translation)"))
         self._set_ready(bool(s))
         self._refit()
 
@@ -1779,7 +1834,7 @@ class TranslationPopup(QFrame):
         self.result = ""
         self.text.setObjectName("trerr")
         self.text.setStyleSheet("color: #B00020;")
-        self.text.setText(f"Traduzione non riuscita: {msg}")
+        self.text.setText(_t("Translation failed: {err}").format(err=msg))
         self._set_ready(False)
         self._refit()
 
@@ -1792,19 +1847,19 @@ class TranslationPopup(QFrame):
         try:
             if self.worker is not None and self.worker.isRunning():
                 self.worker.requestInterruption()
-        except RuntimeError:          # worker già terminato e distrutto
+        except RuntimeError:          # worker already finished and destroyed
             pass
 
 
 # --------------------------------------------------------------------------- #
-# Vista PDF (scorrimento continuo, rendering pigro, selezione testo)
+# PDF view (continuous scrolling, lazy rendering, text selection)
 # --------------------------------------------------------------------------- #
 class PdfView(QGraphicsView):
     positionChanged = Signal()
-    selectionMade = Signal(int, int, object)                  # g0, g1, QPoint globale
+    selectionMade = Signal(int, int, object)                  # g0, g1, global QPoint
     annotationClicked = Signal(str)
-    annotationActivated = Signal(str)                         # doppio clic
-    contextRequested = Signal(str, int, float, float, object)  # ann_id|"", pag, x, y, QPoint
+    annotationActivated = Signal(str)                         # double click
+    contextRequested = Signal(str, int, float, float, object)  # ann_id|"", page, x, y, QPoint
     pageClicked = Signal(int, float, float)
 
     def __init__(self, document: Document, parent=None):
@@ -1812,7 +1867,7 @@ class PdfView(QGraphicsView):
         self.d = document
         self.zoom = 1.0
         self.place_mode = False
-        self.sel = None                    # (g0, g1) parole selezionate
+        self.sel = None                    # (g0, g1) selected words
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
         self.setBackgroundBrush(QColor("#4b5058"))
@@ -1847,12 +1902,12 @@ class PdfView(QGraphicsView):
         self._timer.setSingleShot(True)
         self._timer.setInterval(30)
         self._timer.timeout.connect(self._render_visible)
-        self.popup: TranslationPopup | None = None      # traduzione della selezione
+        self.popup: TranslationPopup | None = None      # translation of the selection
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self.horizontalScrollBar().valueChanged.connect(self._schedule)
         self.horizontalScrollBar().valueChanged.connect(self.place_popup)
 
-    # ---- coordinate ----
+    # ---- coordinates ----
     def page_rect_to_scene(self, p, x0, y0, x1, y1) -> QRectF:
         return QRectF(self.page_x[p] + x0, self.offsets[p] + y0, x1 - x0, y1 - y0)
 
@@ -1873,7 +1928,7 @@ class PdfView(QGraphicsView):
         self.place_popup()
         self.positionChanged.emit()
 
-    # ---- riquadro della traduzione, ancorato alla selezione ----
+    # ---- translation box, anchored to the selection ----
     def show_popup(self, popup):
         self.close_popup()
         self.popup = popup
@@ -1899,11 +1954,11 @@ class PdfView(QGraphicsView):
         vp = self.viewport().rect()
         w, h = p.width(), p.height()
         x = min(max(r.left(), 4), max(vp.width() - w - 4, 4))
-        y = r.bottom() + 6                                   # sotto la selezione…
+        y = r.bottom() + 6                                   # below the selection…
         if y + h > vp.height() - 4 and r.top() - h - 6 >= 4:
-            y = r.top() - h - 6                              # …o sopra, se sotto non c'è spazio
+            y = r.top() - h - 6                              # …or above, if there is no room below
         p.move(int(x), int(y))
-        p.setVisible(r.intersects(vp))                       # selezione fuori vista: nascosto
+        p.setVisible(r.intersects(vp))                       # selection out of view: hidden
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -1972,9 +2027,9 @@ class PdfView(QGraphicsView):
         vw = max(self.viewport().width(), 200)
         self.set_zoom((vw - 4) / (self.max_w + 2 * PAGE_GAP))
 
-    # ---- posizione ----
+    # ---- position ----
     def get_position(self):
-        """(pagina, x, y) del punto di lettura, in coordinate della pagina."""
+        """(page, x, y) of the reading position, in page coordinates."""
         vp = self.viewport()
         p = self.mapToScene(vp.width() // 2, int(vp.height() * ANCHOR_RATIO))
         n = len(self.offsets)
@@ -2019,7 +2074,7 @@ class PdfView(QGraphicsView):
         b = self.d.blocks[k]
         self.flash_rects([[b.page, *b.rect]], ms)
 
-    # ---- selezione ----
+    # ---- selection ----
     def set_selection(self, g0, g1):
         self.clear_selection()
         self.sel = (min(g0, g1), max(g0, g1))
@@ -2032,7 +2087,7 @@ class PdfView(QGraphicsView):
             self._sel_items.append(r)
 
     def clear_selection(self):
-        self.close_popup()               # la traduzione vive solo con la sua selezione
+        self.close_popup()               # the translation lives only with its selection
         for it in self._sel_items:
             self._scene.removeItem(it)
         self._sel_items = []
@@ -2041,7 +2096,7 @@ class PdfView(QGraphicsView):
     def selected_text(self):
         return self.d.text_for_words(*self.sel) if self.sel else ""
 
-    # ---- annotazioni ----
+    # ---- annotations ----
     def set_annotations(self, renders):
         for it in self._ann_items:
             self._scene.removeItem(it)
@@ -2049,7 +2104,7 @@ class PdfView(QGraphicsView):
         for r in renders:
             tip = r["note"] or ""
             if r["approx"]:
-                tip = (tip + "\n" if tip else "") + "(posizione stimata dalla traduzione)"
+                tip = (tip + "\n" if tip else "") + _t("(position estimated from the translation)")
             if r["rects"]:
                 rects = [self.page_rect_to_scene(*rc) for rc in r["rects"]]
                 it = HighlightItem(r["id"], rects, r["color"], r["approx"], tip)
@@ -2059,7 +2114,7 @@ class PdfView(QGraphicsView):
             if r["icon"]:
                 p, x, y = r["icon"]
                 it = NoteIconItem(r["id"], self.page_x[p] + x, self.offsets[p] + y,
-                                  r["color"], tip or "Nota")
+                                  r["color"], tip or _t("Note"))
                 it.active = r["id"] == self._active_id
                 self._scene.addItem(it)
                 self._ann_items.append(it)
@@ -2104,7 +2159,7 @@ class PdfView(QGraphicsView):
             if not self._dragging and (sp - start_sp).manhattanLength() * self.zoom > 4:
                 self._dragging = True
             if self._dragging and g_start is not None:
-                h = self.viewport().height()   # scorrimento automatico ai bordi
+                h = self.viewport().height()   # automatic scrolling at the edges
                 if pt.y() < 0 or pt.y() > h:
                     edge = pt.y() if pt.y() < 0 else pt.y() - h
                     self.verticalScrollBar().setValue(self.verticalScrollBar().value() + int(edge / 2))
@@ -2114,7 +2169,7 @@ class PdfView(QGraphicsView):
                 if g is not None:
                     self.set_selection(g_start, g)
             return
-        # cursore al passaggio
+        # cursor while hovering
         if self.place_mode:
             self.viewport().setCursor(Qt.CrossCursor)
         else:
@@ -2154,7 +2209,7 @@ class PdfView(QGraphicsView):
             return
         pno, x, y = self.scene_to_page(sp)
         g = self.d.word_at(pno, x, y, nearest=False)
-        if g is not None:                       # doppio clic su una parola: la seleziona
+        if g is not None:                       # double click on a word: selects it
             self.set_selection(g, g)
             self.selectionMade.emit(g, g, e.globalPosition().toPoint())
 
@@ -2165,7 +2220,7 @@ class PdfView(QGraphicsView):
 
 
 # --------------------------------------------------------------------------- #
-# Finestra principale
+# Main window
 # --------------------------------------------------------------------------- #
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -2181,33 +2236,33 @@ class MainWindow(QMainWindow):
         self.annotations: list = []
         self._undo: list = []
         self.cur_color = COLORS[0][1]
-        self._relink = None                      # (ann_id, lang) in correzione
-        self._intra_cache: dict = {}             # allineamento parole dentro i paragrafi
+        self._relink = None                      # (ann_id, lang) being corrected
+        self._intra_cache: dict = {}             # word alignment inside paragraphs
         self.worker: AlignWorker | None = None
         self._align_pending = False
         self.lang_actions: dict[str, QAction] = {}
-        self.glossaries: dict[str, str] = {}      # "it>de" -> testo del glossario
-        self.gen_maps: dict[str, dict] = {}       # lingua generata -> file di corrispondenza
+        self.glossaries: dict[str, str] = {}      # "it>de" -> glossary text
+        self.gen_maps: dict[str, dict] = {}       # generated language -> mapping file
         self.gen_worker: TranslateWorker | None = None
         self.gen_job: dict | None = None
-        self.ocr_job: dict | None = None          # processo OCR in corso
-        self._ocr_skip: set = set()               # hash dei PDF senza OCR in questa sessione
+        self.ocr_job: dict | None = None          # running OCR process
+        self._ocr_skip: set = set()               # hashes of the PDFs without OCR in this session
         self.ocr_timer = QTimer(self)
         self.ocr_timer.setInterval(700)
         self.ocr_timer.timeout.connect(self._ocr_poll)
-        # stato di Ollama (traduzione disponibile?), ricontrollato in background
+        # Ollama status (translation available?), checked again in the background
         self.ollama_ok, self.ollama_models_list, self.ollama_err = None, [], ""
         self._probe: OllamaProbe | None = None
         self._preloader: ModelPreloader | None = None
-        self._tr_target: str | None = None          # ultima lingua scelta per «Traduci»
-        self._tr_cache: dict = {}                   # (testo, src, tgt, modello) -> traduzione
+        self._tr_target: str | None = None          # last language chosen for «Translate»
+        self._tr_cache: dict = {}                   # (text, src, tgt, model) -> translation
         self.probe_timer = QTimer(self)
         self.probe_timer.setInterval(10000)
         self.probe_timer.timeout.connect(self.check_ollama)
 
         self.stack = QStackedWidget()
-        self.placeholder = QLabel("Apri un progetto (Ctrl+O) o aggiungi PDF (Ctrl+L)\n"
-                                  "oppure trascina qui i file PDF")
+        self.placeholder = QLabel(_t("Open a project (Ctrl+O) or add PDFs (Ctrl+L)\n"
+                                     "or drag PDF files here"))
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.placeholder.setStyleSheet("color:#888; font-size:15px;")
         self.stack.addWidget(self.placeholder)
@@ -2220,17 +2275,17 @@ class MainWindow(QMainWindow):
         self.gen_bar.setMaximumWidth(150)
         self.gen_bar.setMaximumHeight(14)
         self.gen_stop = QToolButton()
-        self.gen_stop.setText("Interrompi")
+        self.gen_stop.setText(_t("Stop"))
         self.gen_stop.clicked.connect(self.stop_generation)
         self.ocr_label = QLabel("")
         self.ocr_stop = QToolButton()
-        self.ocr_stop.setText("Interrompi OCR")
+        self.ocr_stop.setText(_t("Stop OCR"))
         self.ocr_stop.clicked.connect(self.stop_ocr)
         for w in (self.gen_label, self.gen_bar, self.gen_stop, self.ocr_label, self.ocr_stop):
             self.statusBar().addPermanentWidget(w)
             w.hide()
         self.statusBar().addPermanentWidget(self.status_align)
-        self.tr_status = QToolButton()               # ● Traduzione disponibile / non disponibile
+        self.tr_status = QToolButton()               # ● Translation available / not available
         self.tr_status.setAutoRaise(True)
         self.tr_status.clicked.connect(self.check_ollama)
         self.statusBar().addPermanentWidget(self.tr_status)
@@ -2254,78 +2309,85 @@ class MainWindow(QMainWindow):
         return a
 
     def _build_ui(self):
-        self.a_new = self._act("Nuovo progetto", self.new_project, "Ctrl+N")
-        self.a_open = self._act("Apri progetto…", self.open_project_dialog, "Ctrl+O")
-        self.a_save = self._act("Salva progetto", lambda: self.save_project(), "Ctrl+S")
-        self.a_saveas = self._act("Salva con nome…", lambda: self.save_project(True), "Ctrl+Shift+S")
-        self.a_add = self._act("Aggiungi PDF/lingua…", self.add_pdf_dialog, "Ctrl+L")
-        self.a_remove = self._act("Rimuovi lingua corrente", self.remove_current_language)
-        self.a_export = self._act("Esporta PDF annotati…", self.export_annotated, "Ctrl+E")
-        self.a_quit = self._act("Esci", self.close, "Ctrl+Q")
+        self.a_new = self._act(_t("New project"), self.new_project, "Ctrl+N")
+        self.a_open = self._act(_t("Open project…"), self.open_project_dialog, "Ctrl+O")
+        self.a_save = self._act(_t("Save project"), lambda: self.save_project(), "Ctrl+S")
+        self.a_saveas = self._act(_t("Save as…"), lambda: self.save_project(True), "Ctrl+Shift+S")
+        self.a_add = self._act(_t("Add PDF/language…"), self.add_pdf_dialog, "Ctrl+L")
+        self.a_remove = self._act(_t("Remove current language"), self.remove_current_language)
+        self.a_export = self._act(_t("Export annotated PDFs…"), self.export_annotated, "Ctrl+E")
+        self.a_quit = self._act(_t("Quit"), self.close, "Ctrl+Q")
         self.a_zin = self._act("Zoom +", lambda: self._view_call("set_zoom_rel", 1.2),
                                [QKeySequence.ZoomIn, QKeySequence("Ctrl+=")])
         self.a_zout = self._act("Zoom −", lambda: self._view_call("set_zoom_rel", 1 / 1.2),
                                 [QKeySequence.ZoomOut])
-        self.a_fit = self._act("Adatta larghezza", lambda: self._view_call("fit_width"), "Ctrl+0")
-        self.a_goto = self._act("Vai a pagina…", self.goto_page_dialog, "Ctrl+G")
-        self.a_next = self._act("Lingua successiva", lambda: self.cycle_language(1), "Ctrl+Tab")
-        self.a_prev = self._act("Lingua precedente", lambda: self.cycle_language(-1), "Ctrl+Shift+Tab")
-        self.a_flash = self._act("Evidenzia blocco corrispondente al cambio lingua", lambda: None,
+        self.a_fit = self._act(_t("Fit width"), lambda: self._view_call("fit_width"), "Ctrl+0")
+        self.a_goto = self._act(_t("Go to page…"), self.goto_page_dialog, "Ctrl+G")
+        self.a_next = self._act(_t("Next language"), lambda: self.cycle_language(1), "Ctrl+Tab")
+        self.a_prev = self._act(_t("Previous language"), lambda: self.cycle_language(-1), "Ctrl+Shift+Tab")
+        self.a_flash = self._act(_t("Flash the matching block when switching language"), lambda: None,
                                  checkable=True)
         self.a_flash.setChecked(True)
-        self.a_realign = self._act("Ricalcola allineamento", self.realign)
-        self.a_ocr = self._act("Riconosci testo nelle pagine scansionate (OCR)", self.ocr_current)
+        self.a_realign = self._act(_t("Recompute alignment"), self.realign)
+        self.a_ocr = self._act(_t("Recognise text in scanned pages (OCR)"), self.ocr_current)
 
-        # annotazioni
-        self.a_hl_mode = self._act("Evidenziatore", self._on_hl_mode, "Ctrl+Shift+H", checkable=True)
-        self.a_hl_mode.setToolTip("Modalità evidenziatore: la selezione viene evidenziata subito "
-                                  "(Ctrl+Shift+H)")
-        self.a_note_mode = self._act("Nota", self._on_note_mode, "Ctrl+Shift+N", checkable=True)
-        self.a_note_mode.setToolTip("Clicca sulla pagina per inserire una nota (Ctrl+Shift+N)")
-        self.a_hl = self._act("Evidenzia selezione", lambda: self._highlight_selection(), "H")
-        self.a_hl_note = self._act("Evidenzia selezione con nota…",
+        # annotations
+        self.a_hl_mode = self._act(_t("Highlighter"), self._on_hl_mode, "Ctrl+Shift+H", checkable=True)
+        self.a_hl_mode.setToolTip(_t("Highlighter mode: the selection is highlighted at once "
+                                     "(Ctrl+Shift+H)"))
+        self.a_note_mode = self._act(_t("Note"), self._on_note_mode, "Ctrl+Shift+N", checkable=True)
+        self.a_note_mode.setToolTip(_t("Click on the page to insert a note (Ctrl+Shift+N)"))
+        self.a_hl = self._act(_t("Highlight selection"), lambda: self._highlight_selection(), "H")
+        self.a_hl_note = self._act(_t("Highlight selection with note…"),
                                    lambda: self._highlight_selection(with_note=True), "N")
-        self.a_copy = self._act("Copia testo selezionato", self.copy_selection, QKeySequence.Copy)
-        self.a_translate_sel = self._act("Traduci selezione", lambda: self.translate_selection(), "T")
-        self.a_translate_sel.setToolTip("Traduce il testo selezionato con Ollama (T)")
-        self.a_about = self._act("Informazioni su PolyglotPDF…", self.about)
-        self.a_undo = self._act("Annulla", self.undo, QKeySequence.Undo)
-        self.a_esc = self._act("Annulla selezione/modalità", self.cancel_modes, "Esc")
+        self.a_copy = self._act(_t("Copy selected text"), self.copy_selection, QKeySequence.Copy)
+        self.a_translate_sel = self._act(_t("Translate selection"), lambda: self.translate_selection(), "T")
+        self.a_translate_sel.setToolTip(_t("Translates the selected text with Ollama (T)"))
+        self.a_about = self._act(_t("About PolyglotPDF…"), self.about)
+        self.a_undo = self._act(_t("Undo"), self.undo, QKeySequence.Undo)
+        self.a_esc = self._act(_t("Cancel selection/mode"), self.cancel_modes, "Esc")
 
         m = self.menuBar().addMenu("&File")
         for a in (self.a_new, self.a_open, self.a_save, self.a_saveas, None,
                   self.a_add, self.a_remove, None, self.a_export, None, self.a_quit):
             m.addSeparator() if a is None else m.addAction(a)
-        m = self.menuBar().addMenu("&Modifica")
+        m = self.menuBar().addMenu(_t("&Edit"))
         for a in (self.a_undo, None, self.a_copy, self.a_translate_sel, self.a_hl, self.a_hl_note, None,
                   self.a_hl_mode, self.a_note_mode):
             m.addSeparator() if a is None else m.addAction(a)
-        self.color_menu = m.addMenu("Colore evidenziatore")
-        self.menu_vista = self.menuBar().addMenu("&Vista")
+        self.color_menu = m.addMenu(_t("Highlighter colour"))
+        self.menu_vista = self.menuBar().addMenu(_t("&View"))
         for a in (self.a_zin, self.a_zout, self.a_fit, self.a_goto, None,
                   self.a_next, self.a_prev, None, self.a_flash):
             self.menu_vista.addSeparator() if a is None else self.menu_vista.addAction(a)
-        m = self.menuBar().addMenu("&Allineamento")
+        m = self.menuBar().addMenu(_t("&Alignment"))
         m.addAction(self.a_realign)
         m.addAction(self.a_ocr)
 
-        self.a_generate = self._act("Genera lingua mancante…", self.generate_language_dialog,
+        self.a_generate = self._act(_t("Generate missing language…"), self.generate_language_dialog,
                                     "Ctrl+Shift+G")
-        self.a_gen_stop = self._act("Interrompi generazione", self.stop_generation)
+        self.a_gen_stop = self._act(_t("Stop generation"), self.stop_generation)
         self.a_gen_stop.setEnabled(False)
-        self.a_review = self._act("Paragrafi da rivedere…", self.review_list)
-        self.a_regen = self._act("Rigenera PDF della lingua corrente",
+        self.a_review = self._act(_t("Paragraphs to review…"), self.review_list)
+        self.a_regen = self._act(_t("Regenerate PDF of the current language"),
                                  lambda: self.regenerate_language(self.current))
-        m = self.menuBar().addMenu("&Traduzione")
+        m = self.menuBar().addMenu(_t("&Translation"))
         for a in (self.a_translate_sel, None, self.a_generate, self.a_gen_stop, None, self.a_review,
                   self.a_regen):
             m.addSeparator() if a is None else m.addAction(a)
-        m = self.menuBar().addMenu("&?")
+        m = self.menuBar().addMenu(_t("&Help"))
         m.addAction(self.a_about)
+        lm = m.addMenu("Language / Lingua")       # in both languages: findable in either
+        self.ui_lang_group = QActionGroup(self)
+        for code, name in UI_LANGS.items():
+            a = lm.addAction(name, lambda c=code: self.set_ui_lang(c))
+            a.setCheckable(True)
+            a.setChecked(code == UI_LANG)
+            self.ui_lang_group.addAction(a)
 
         self.color_group = QActionGroup(self)
         for i, (name, col) in enumerate(COLORS):
-            a = QAction(color_icon(col), name, self)
+            a = QAction(color_icon(col), _t(name), self)
             a.setCheckable(True)
             a.setChecked(i == 0)
             a.setShortcut(QKeySequence(f"Alt+{i + 1}"))
@@ -2336,9 +2398,9 @@ class MainWindow(QMainWindow):
         self.color_btn.setMenu(self.color_menu)
         self.color_btn.setPopupMode(QToolButton.InstantPopup)
         self.color_btn.setIcon(color_icon(self.cur_color))
-        self.color_btn.setToolTip("Colore evidenziatore (Alt+1…5)")
+        self.color_btn.setToolTip(_t("Highlighter colour (Alt+1…5)"))
 
-        tb = QToolBar("Principale")
+        tb = QToolBar(_t("Main"))
         tb.setMovable(False)
         for a in (self.a_open, self.a_add, self.a_save):
             tb.addAction(a)
@@ -2353,7 +2415,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.page_label)
         self.addToolBar(tb)
 
-        self.lang_bar = QToolBar("Lingue")
+        self.lang_bar = QToolBar(_t("Languages"))
         self.lang_bar.setMovable(False)
         self.addToolBar(self.lang_bar)
         self.lang_group = QActionGroup(self)
@@ -2369,7 +2431,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence.Delete, self.panel,
                   activated=lambda: self.panel.currentItem()
                   and self.delete_annotation(self.panel.currentItem().data(Qt.UserRole)))
-        self.dock = QDockWidget("Note ed evidenziazioni", self)
+        self.dock = QDockWidget(_t("Notes and highlights"), self)
         self.dock.setObjectName("annotations")
         self.dock.setWidget(self.panel)
         self.dock.setMinimumWidth(260)
@@ -2399,26 +2461,43 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def _update_title(self):
-        name = os.path.basename(self.project_path) if self.project_path else "senza nome"
+        name = os.path.basename(self.project_path) if self.project_path else _t("untitled")
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION} — {name}")
 
-    # ---- versione e stato della traduzione (Ollama) ----
+    # ---- version and translation status (Ollama) ----
     def about(self):
         if self.ollama_ok:
-            oll = f"attivo su {ollama_base()}<br>Modelli: {html.escape(', '.join(self.ollama_models_list) or '–')}"
+            oll = _t("active at {url}<br>Models: {models}").format(
+                url=ollama_base(), models=html.escape(', '.join(self.ollama_models_list) or '–'))
         else:
-            oll = f"non rilevato ({html.escape(self.ollama_err or 'controllo in corso')})"
-        QMessageBox.about(self, f"Informazioni su {APP_NAME}",
-                          f"<h3>{APP_NAME} {APP_VERSION}</h3>"
-                          "<p>Lettura dello stesso documento PDF in più lingue, con note ed "
-                          "evidenziazioni sincronizzate, OCR e traduzione locale.</p>"
-                          f"<p><b>Ollama:</b> {oll}</p>"
-                          f"<p><b>Cartella dati:</b> {html.escape(CACHE_DIR)}<br>"
-                          f"<b>Python</b> {sys.version.split()[0]} · <b>PyMuPDF</b> {fitz.VersionBind} · "
-                          f"<b>Qt</b> {qVersion()}</p>")
+            oll = _t("not detected ({err})").format(err=html.escape(self.ollama_err or _t('check in progress')))
+        QMessageBox.about(self, _t("About {app}").format(app=APP_NAME),
+                          _t("<h3>{app} {version}</h3>"
+                             "<p>Reading the same PDF document in several languages, with synchronised "
+                             "notes and highlights, OCR and local translation.</p>"
+                             "<p><b>Ollama:</b> {ollama}</p>"
+                             "<p><b>Data folder:</b> {data}<br>"
+                             "<b>Python</b> {python} · <b>PyMuPDF</b> {pymupdf} · "
+                             "<b>Qt</b> {qt}</p>").format(
+                              app=APP_NAME, version=APP_VERSION, ollama=oll, data=html.escape(CACHE_DIR),
+                              python=sys.version.split()[0], pymupdf=fitz.VersionBind, qt=qVersion()))
+
+    def set_ui_lang(self, code):
+        """Saves the interface language; it takes effect at the next start."""
+        s = load_settings()
+        s["ui_lang"] = code
+        try:
+            save_settings(s)
+        except OSError as e:
+            QMessageBox.warning(self, APP_NAME, str(e))
+            return
+        if code != UI_LANG:
+            QMessageBox.information(self, APP_NAME,
+                                    "The interface language will change at the next start of PolyglotPDF.\n"
+                                    "La lingua dell'interfaccia cambierà al prossimo avvio di PolyglotPDF.")
 
     def check_ollama(self):
-        """Controlla Ollama in background (non blocca l'interfaccia se non risponde)."""
+        """Checks Ollama in the background (does not block the interface if it does not answer)."""
         if self._probe is not None and self._probe.isRunning():
             return
         self._probe = OllamaProbe(self)
@@ -2434,30 +2513,30 @@ class MainWindow(QMainWindow):
 
     def _show_tr_status(self):
         if self.ollama_ok is None:
-            text, color, tip = "● Traduzione: controllo…", "#888888", "Controllo di Ollama in corso"
+            text, color, tip = _t("● Translation: checking…"), "#888888", _t("Checking Ollama")
         elif self.translation_available():
-            text, color = "● Traduzione disponibile", "#1E8E3E"
-            tip = (f"Ollama attivo su {ollama_base()}\nModelli di traduzione: "
+            text, color = _t("● Translation available"), "#1E8E3E"
+            tip = (_t("Ollama active at {url}\nTranslation models: ").format(url=ollama_base())
                    + ", ".join(translation_models(self.ollama_models_list)))
         elif self.ollama_ok:
-            text, color = "● Traduzione non disponibile", "#C62828"
-            tip = (f"Ollama è attivo ma manca il modello di traduzione.\n"
-                   f"Installalo con:  ollama pull {TR_MODELS[0]}")
+            text, color = _t("● Translation not available"), "#C62828"
+            tip = _t("Ollama is running but the translation model is missing.\n"
+                     "Install it with:  ollama pull {model}").format(model=TR_MODELS[0])
         else:
-            text, color = "● Traduzione non disponibile", "#C62828"
-            tip = (f"Ollama non rilevato su {ollama_base()}.\n"
-                   "Installalo da https://ollama.com e avvialo.")
+            text, color = _t("● Translation not available"), "#C62828"
+            tip = _t("Ollama not detected at {url}.\n"
+                     "Install it from https://ollama.com and start it.").format(url=ollama_base())
         self.tr_status.setText(text)
         self.tr_status.setStyleSheet(f"QToolButton {{color: {color}; font-weight: bold;}}")
-        self.tr_status.setToolTip(tip + "\n\nClic per ricontrollare (controllo automatico ogni 10 s)")
+        self.tr_status.setToolTip(tip + _t("\n\nClick to check again (automatic check every 10 s)"))
 
-    # ---- traduzione della selezione ----
+    # ---- translation of the selection ----
     def _sel_model(self):
         models = translation_models(self.ollama_models_list)
         return next((m for m in models if m.startswith(TR_MODELS[0])), models[0]) if models else None
 
     def preload_model(self):
-        """Selezione appena fatta: si carica il modello in background (se non c'è già)."""
+        """Selection just made: the model is loaded in the background (if not loaded yet)."""
         if not self.translation_available():
             return
         if self._preloader is not None and self._preloader.isRunning():
@@ -2474,11 +2553,11 @@ class MainWindow(QMainWindow):
         lang = lang or self.current
         v = self.views.get(lang)
         if v is None or not v.sel:
-            self.statusBar().showMessage("Seleziona prima il testo da tradurre", 3000)
+            self.statusBar().showMessage(_t("Select the text to translate first"), 3000)
             return
         if not self.translation_available():
             self._show_tr_status()
-            QMessageBox.information(self, APP_NAME, "Traduzione non disponibile.\n\n"
+            QMessageBox.information(self, APP_NAME, _t("Translation not available.\n\n")
                                     + self.tr_status.toolTip().split("\n\n")[0])
             self.check_ollama()
             return
@@ -2526,14 +2605,14 @@ class MainWindow(QMainWindow):
         if v is None:
             self.page_label.setText("  –  ")
             return
-        self.page_label.setText(f"  {self.current.upper()}  ·  Pag. {v.current_page() + 1} / "
-                                f"{len(v.offsets)}  ·  {v.zoom * 100:.0f}%  ")
+        self.page_label.setText(_t("  {lang}  ·  Page {page} / {pages}  ·  {zoom:.0f}%  ").format(
+            lang=self.current.upper(), page=v.current_page() + 1, pages=len(v.offsets), zoom=v.zoom * 100))
 
     def _on_view_scrolled(self):
         if self.sender() is self._view():
             self._update_page_label()
 
-    # ---- documenti ----
+    # ---- documents ----
     def ask_lang(self, path):
         guess = guess_lang_from_name(path)
         if guess is None:
@@ -2543,13 +2622,14 @@ class MainWindow(QMainWindow):
             except Exception:
                 guess = None
         items = list(dict.fromkeys(([guess] if guess else []) + LANGS))
-        lang, ok = QInputDialog.getItem(self, "Lingua del documento",
-                                        f"Lingua di «{os.path.basename(path)}»:", items, 0, True)
+        lang, ok = QInputDialog.getItem(self, _t("Document language"),
+                                        _t("Language of «{name}»:").format(name=os.path.basename(path)),
+                                        items, 0, True)
         lang = lang.strip().lower()
         return lang if ok and lang else None
 
     def add_pdf_dialog(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "Aggiungi PDF", "", "PDF (*.pdf)")
+        paths, _ = QFileDialog.getOpenFileNames(self, _t("Add PDF"), "", "PDF (*.pdf)")
         if paths:
             self.add_pdfs(paths)
 
@@ -2561,7 +2641,8 @@ class MainWindow(QMainWindow):
                 continue
             if lang in self.docs:
                 r = QMessageBox.question(self, APP_NAME,
-                                         f"La lingua {lang.upper()} esiste già. Sostituire il PDF?")
+                                         _t("The language {lang} already exists. Replace the PDF?").format(
+                                             lang=lang.upper()))
                 if r != QMessageBox.Yes:
                     continue
             changed |= self._load_doc(p, lang)
@@ -2580,15 +2661,15 @@ class MainWindow(QMainWindow):
             d = Document(path, lang)
         except Exception as e:
             QApplication.restoreOverrideCursor()
-            QMessageBox.warning(self, APP_NAME, f"Impossibile aprire {path}:\n{e}")
+            QMessageBox.warning(self, APP_NAME, _t("Cannot open {path}:\n{err}").format(path=path, err=e))
             return False
         QApplication.restoreOverrideCursor()
-        if lang in self.views:  # sostituzione
+        if lang in self.views:  # replacement
             old = self.views.pop(lang)
             self.stack.removeWidget(old)
             old.deleteLater()
             self._drop_mappings(lang)
-        gm = load_gen_map(d.path)   # PDF generato da PolyglotPDF e non modificato altrove?
+        gm = load_gen_map(d.path)   # PDF generated by PolyglotPDF and not modified elsewhere?
         if gm and gm.get("out_hash") == d.hash:
             self.gen_maps[lang] = gm
         else:
@@ -2656,7 +2737,7 @@ class MainWindow(QMainWindow):
         self.refresh_annotations()
         self._update_page_label()
 
-    # ---- cambio lingua ----
+    # ---- language switch ----
     def map_pos(self, la, lb, pos):
         if la == lb:
             return pos
@@ -2666,10 +2747,10 @@ class MainWindow(QMainWindow):
         if (lb, la) in self.mappings:
             xs, ys = self.mappings[(lb, la)]
             return float(np.interp(pos, ys, xs))
-        return pos * self.docs[lb].n / max(self.docs[la].n, 1)  # proporzionale (provvisorio)
+        return pos * self.docs[lb].n / max(self.docs[la].n, 1)  # proportional (provisional)
 
     def map_pos_fine(self, la, lb, p, end=False):
-        """Come map_pos, ma dentro paragrafi corrispondenti allinea anche le parole."""
+        """Like map_pos, but inside matching paragraphs the words are aligned too."""
         if la == lb:
             return p
         da, db = self.docs[la], self.docs[lb]
@@ -2679,19 +2760,19 @@ class MainWindow(QMainWindow):
             sb, f = sb - 1, 1.0
         sb = min(sb, da.n - 1)
         tb = self._paired_block(la, lb, sb)
-        if tb is None:                                   # paragrafi non corrispondenti 1:1
+        if tb is None:                                   # paragraphs not matching 1:1
             return self.map_pos(la, lb, p)
         xs, ys, _m = self._intra(la, lb, sb, tb)
         return tb + float(np.interp(f, xs, ys))
 
     def _paired_block(self, la, lb, sb):
-        """Blocco di lb che corrisponde 1:1 al blocco sb di la (None se non è così)."""
+        """Block of lb matching block sb of la 1:1 (None if it is not so)."""
         db = self.docs[lb]
         tb = int(min(max(self.map_pos(la, lb, sb + 0.5), 0.0), db.n - 1e-6))
         return tb if int(self.map_pos(lb, la, tb + 0.5)) == sb else None
 
     def _intra(self, la, lb, sb, tb):
-        """(xs, ys, corrispondenze parola->parola) fra due paragrafi corrispondenti, in cache."""
+        """(xs, ys, word->word correspondences) between two matching paragraphs, cached."""
         da, db = self.docs[la], self.docs[lb]
         key = (da.text_key, db.text_key, sb, tb)
         if key not in self._intra_cache:
@@ -2700,9 +2781,9 @@ class MainWindow(QMainWindow):
         return self._intra_cache[key]
 
     def _direct_words(self, la, lb, pos):
-        """Evidenziazione breve dentro un paragrafo: parole corrispondenti trovate direttamente
-        (anche con ordine diverso, «Intelligentes Design» -> «il design intelligente»).
-        -> (g0, g1) nel documento lb, oppure None."""
+        """Short highlight inside a paragraph: matching words found directly
+        (also in a different order, «Intelligentes Design» -> «il design intelligente»).
+        -> (g0, g1) in document lb, or None."""
         da, db = self.docs[la], self.docs[lb]
         rng = da.words_in_pos_range(*pos)
         if not rng:
@@ -2720,8 +2801,8 @@ class MainWindow(QMainWindow):
         if not hit:
             return None
         Kb = len(db.blocks[tb].words)
-        lo = max(min(kb for _k, kb in hit) - (hit[0][0] - k0), 0)        # parole non trovate ai lati:
-        hi = min(max(kb for _k, kb in hit) + (k1 - hit[-1][0]), Kb - 1)  # stesso numero di parole
+        lo = max(min(kb for _k, kb in hit) - (hit[0][0] - k0), 0)        # words not found at the sides:
+        hi = min(max(kb for _k, kb in hit) + (k1 - hit[-1][0]), Kb - 1)  # same number of words
         return db.block_wstart[tb] + lo, db.block_wstart[tb] + hi
 
     def switch_language(self, lang):
@@ -2757,12 +2838,12 @@ class MainWindow(QMainWindow):
         v = self._view()
         if v is None:
             return
-        p, ok = QInputDialog.getInt(self, "Vai a pagina", "Pagina:", v.current_page() + 1,
+        p, ok = QInputDialog.getInt(self, _t("Go to page"), _t("Page:"), v.current_page() + 1,
                                     1, len(v.offsets))
         if ok:
             v.goto_page(p - 1)
 
-    # ---- annotazioni: modello ----
+    # ---- annotations: model ----
     def _ann(self, ann_id):
         return next((a for a in self.annotations if a["id"] == ann_id), None)
 
@@ -2778,7 +2859,7 @@ class MainWindow(QMainWindow):
         return {"lang": lang, "hash": d.hash, "tk": d.text_key, "pos": [p, p], "point": [page, x, y]}
 
     def _ann_render(self, ann, lang):
-        """Geometria dell'annotazione nella lingua richiesta (esatta o stimata)."""
+        """Geometry of the annotation in the requested language (exact or estimated)."""
         d = self.docs.get(lang)
         if d is None:
             return None
@@ -2835,7 +2916,7 @@ class MainWindow(QMainWindow):
             if r["kind"] == "highlight":
                 head = f"p. {r['page'] + 1}  {mark}«{short(r['text'], 90)}»"
             else:
-                head = f"p. {r['page'] + 1}  {mark}📌 Nota"
+                head = _t("p. {page}  {mark}📌 Note").format(page=r['page'] + 1, mark=mark)
             body = f"\n✎ {short(r['note'], 140)}" if r["note"] else ""
             it = QListWidgetItem(color_icon(r["color"]), head + body)
             it.setData(Qt.UserRole, r["id"])
@@ -2843,7 +2924,7 @@ class MainWindow(QMainWindow):
             self.panel.addItem(it)
             if r["id"] == current_id:
                 self.panel.setCurrentItem(it)
-        self.dock.setWindowTitle(f"Note ed evidenziazioni ({len(rows)})")
+        self.dock.setWindowTitle(_t("Notes and highlights ({n})").format(n=len(rows)))
 
     def _push_undo(self):
         self._undo.append(copy.deepcopy(self.annotations))
@@ -2853,18 +2934,18 @@ class MainWindow(QMainWindow):
         self.refresh_annotations()
         if select:
             self._select_in_panel(select)
-        if self.project_path:      # salvataggio automatico
+        if self.project_path:      # automatic saving
             self.save_project(quiet=True)
 
     def undo(self):
         if not self._undo:
-            self.statusBar().showMessage("Niente da annullare", 2000)
+            self.statusBar().showMessage(_t("Nothing to undo"), 2000)
             return
         self.annotations = self._undo.pop()
         self._changed()
-        self.statusBar().showMessage("Annullato", 2000)
+        self.statusBar().showMessage(_t("Undone"), 2000)
 
-    # ---- annotazioni: azioni ----
+    # ---- annotations: actions ----
     def set_color(self, col):
         self.cur_color = col
         self.color_btn.setIcon(color_icon(col))
@@ -2880,7 +2961,7 @@ class MainWindow(QMainWindow):
         for v in self.views.values():
             v.place_mode = checked
         if checked:
-            self.statusBar().showMessage("Clicca sulla pagina dove inserire la nota (Esc per annullare)")
+            self.statusBar().showMessage(_t("Click on the page where the note should go (Esc to cancel)"))
 
     def cancel_modes(self):
         v = self._view()
@@ -2896,18 +2977,18 @@ class MainWindow(QMainWindow):
         v = self._view()
         if v and v.sel:
             QApplication.clipboard().setText(v.selected_text())
-            self.statusBar().showMessage("Testo copiato", 2000)
+            self.statusBar().showMessage(_t("Text copied"), 2000)
 
     def _highlight_selection(self, with_note=False, color=None):
         v = self._view()
         if v is None or not v.sel:
-            self.statusBar().showMessage("Seleziona prima del testo trascinando il mouse", 3000)
+            self.statusBar().showMessage(_t("First select some text by dragging the mouse"), 3000)
             return
         self.add_highlight(self.current, *v.sel, color or self.cur_color, ask_note=with_note)
 
     def add_highlight(self, lang, g0, g1, color, ask_note=False, note=""):
         if ask_note:
-            note, ok = QInputDialog.getMultiLineText(self, "Nota", "Testo della nota:")
+            note, ok = QInputDialog.getMultiLineText(self, _t("Note"), _t("Note text:"))
             if not ok:
                 return
         self._push_undo()
@@ -2919,7 +3000,7 @@ class MainWindow(QMainWindow):
         self._changed(select=ann["id"])
 
     def add_note_at(self, lang, page, x, y):
-        note, ok = QInputDialog.getMultiLineText(self, "Nuova nota", "Testo della nota:")
+        note, ok = QInputDialog.getMultiLineText(self, _t("New note"), _t("Note text:"))
         if not ok or not note.strip():
             return
         self._push_undo()
@@ -2934,7 +3015,7 @@ class MainWindow(QMainWindow):
         ann = self._ann(ann_id)
         if ann is None:
             return
-        note, ok = QInputDialog.getMultiLineText(self, "Nota", "Testo della nota:", ann.get("note", ""))
+        note, ok = QInputDialog.getMultiLineText(self, _t("Note"), _t("Note text:"), ann.get("note", ""))
         if not ok:
             return
         if ann["kind"] == "note" and not note.strip():
@@ -2957,15 +3038,16 @@ class MainWindow(QMainWindow):
             self._push_undo()
             self.annotations.remove(ann)
             self._changed()
-            self.statusBar().showMessage("Annotazione eliminata (Ctrl+Z per annullare)", 3000)
+            self.statusBar().showMessage(_t("Annotation deleted (Ctrl+Z to undo)"), 3000)
 
     def start_relink(self, ann_id, lang):
         ann = self._ann(ann_id)
         if ann is None:
             return
         self._relink = (ann_id, lang)
-        what = "il testo corrispondente" if ann["kind"] == "highlight" else "il punto corrispondente"
-        self.statusBar().showMessage(f"Seleziona {what} in {lang.upper()} (Esc per annullare)")
+        what = _t("the matching text") if ann["kind"] == "highlight" else _t("the matching point")
+        self.statusBar().showMessage(_t("Select {what} in {lang} (Esc to cancel)").format(
+            what=what, lang=lang.upper()))
 
     def reset_override(self, ann_id, lang):
         ann = self._ann(ann_id)
@@ -2984,10 +3066,10 @@ class MainWindow(QMainWindow):
         else:
             ann.setdefault("overrides", {})[lang] = anchor
         self._relink = None
-        self.statusBar().showMessage(f"Posizione in {lang.upper()} aggiornata", 3000)
+        self.statusBar().showMessage(_t("Position in {lang} updated").format(lang=lang.upper()), 3000)
         self._changed(select=ann_id)
 
-    # ---- annotazioni: eventi dalla vista ----
+    # ---- annotations: events from the view ----
     def _on_selection(self, lang, g0, g1, gp):
         if self._relink:
             ann_id, rl = self._relink
@@ -2999,31 +3081,31 @@ class MainWindow(QMainWindow):
         if self.a_hl_mode.isChecked():
             self.add_highlight(lang, g0, g1, self.cur_color)
             return
-        self.preload_model()             # mentre si sceglie dal menu, il modello si carica
+        self.preload_model()             # while the user picks from the menu, the model loads
         menu = QMenu(self)
         for name, col in COLORS:
-            menu.addAction(color_icon(col), f"Evidenzia — {name}",
+            menu.addAction(color_icon(col), _t("Highlight — {colour}").format(colour=_t(name)),
                            lambda c=col: self.add_highlight(lang, g0, g1, c))
         menu.addSeparator()
-        menu.addAction(color_icon(self.cur_color), "Evidenzia con nota…",
+        menu.addAction(color_icon(self.cur_color), _t("Highlight with note…"),
                        lambda: self.add_highlight(lang, g0, g1, self.cur_color, ask_note=True))
-        menu.addAction("Copia testo", self.copy_selection)
+        menu.addAction(_t("Copy text"), self.copy_selection)
         menu.addSeparator()
         self._translate_menu(menu, lang)
         menu.exec(gp)
 
     def _translate_menu(self, menu, lang):
-        """«Traduci» (lingua abituale) + «Traduci in» con le altre lingue."""
+        """«Translate» (usual language) + «Translate into» with the other languages."""
         ok = self.translation_available()
         tgt = self._default_target(lang)
-        a = menu.addAction(f"Traduci in {LANG_NAMES_UI.get(tgt, tgt)} ({tgt.upper()})"
-                           + ("" if ok else " — traduzione non disponibile"),
+        a = menu.addAction(_t("Translate into {name} ({code})").format(name=lang_display(tgt), code=tgt.upper())
+                           + ("" if ok else _t(" — translation not available")),
                            lambda: self.translate_selection(tgt, lang))
         a.setEnabled(ok)
-        sub = menu.addMenu("Traduci in")
+        sub = menu.addMenu(_t("Translate into"))
         sub.setEnabled(ok)
         for l in [l for l in LANGS if l != lang]:
-            sub.addAction(f"{l.upper()} — {LANG_NAMES_UI.get(l, l)}", lambda t=l: self.translate_selection(t, lang))
+            sub.addAction(f"{l.upper()} — {lang_display(l)}", lambda t=l: self.translate_selection(t, lang))
 
     def _on_page_clicked(self, lang, page, x, y):
         if self._relink:
@@ -3082,22 +3164,23 @@ class MainWindow(QMainWindow):
         ann = self._ann(ann_id)
         if ann is None:
             return
-        menu.addAction("Modifica nota…" if ann.get("note") else "Aggiungi nota…",
+        menu.addAction(_t("Edit note…") if ann.get("note") else _t("Add note…"),
                        lambda: self.edit_note(ann_id))
-        cm = menu.addMenu("Colore")
+        cm = menu.addMenu(_t("Colour"))
         for name, col in COLORS:
-            cm.addAction(color_icon(col), name, lambda c=col: self.recolor(ann_id, c))
+            cm.addAction(color_icon(col), _t(name), lambda c=col: self.recolor(ann_id, c))
         r = self._ann_render(ann, lang)
         if r and r["text"]:
-            menu.addAction("Copia testo", lambda: QApplication.clipboard().setText(r["text"]))
+            menu.addAction(_t("Copy text"), lambda: QApplication.clipboard().setText(r["text"]))
         menu.addSeparator()
         if lang != ann["src"]["lang"]:
-            menu.addAction(f"Correggi posizione in {lang.upper()}", lambda: self.start_relink(ann_id, lang))
+            menu.addAction(_t("Fix position in {lang}").format(lang=lang.upper()),
+                           lambda: self.start_relink(ann_id, lang))
         if lang in ann.get("overrides", {}):
-            menu.addAction(f"Ripristina posizione automatica in {lang.upper()}",
+            menu.addAction(_t("Restore automatic position in {lang}").format(lang=lang.upper()),
                            lambda: self.reset_override(ann_id, lang))
         menu.addSeparator()
-        menu.addAction("Elimina", lambda: self.delete_annotation(ann_id))
+        menu.addAction(_t("Delete"), lambda: self.delete_annotation(ann_id))
 
     def _on_context(self, lang, ann_id, page, x, y, gp):
         menu = QMenu(self)
@@ -3110,20 +3193,20 @@ class MainWindow(QMainWindow):
                 g0, g1 = v.sel
                 self.preload_model()
                 for name, col in COLORS:
-                    menu.addAction(color_icon(col), f"Evidenzia — {name}",
+                    menu.addAction(color_icon(col), _t("Highlight — {colour}").format(colour=_t(name)),
                                    lambda c=col: self.add_highlight(lang, g0, g1, c))
-                menu.addAction("Evidenzia con nota…",
+                menu.addAction(_t("Highlight with note…"),
                                lambda: self.add_highlight(lang, g0, g1, self.cur_color, ask_note=True))
-                menu.addAction("Copia testo", self.copy_selection)
+                menu.addAction(_t("Copy text"), self.copy_selection)
                 menu.addSeparator()
                 self._translate_menu(menu, lang)
                 menu.addSeparator()
-            menu.addAction("Aggiungi nota qui…", lambda: self.add_note_at(lang, page, x, y))
+            menu.addAction(_t("Add note here…"), lambda: self.add_note_at(lang, page, x, y))
         e = self._gen_entry_at(lang, page, x, y)
         if e is not None:
             menu.addSeparator()
-            menu.addAction("Modifica traduzione del paragrafo…", lambda: self.edit_translation(lang, e))
-            menu.addAction(f"Ritraduci paragrafo ({self.gen_maps[lang]['model']})",
+            menu.addAction(_t("Edit paragraph translation…"), lambda: self.edit_translation(lang, e))
+            menu.addAction(_t("Translate paragraph again ({model})").format(model=self.gen_maps[lang]['model']),
                            lambda: self.retranslate_paragraph(lang, e))
         menu.exec(gp)
 
@@ -3135,24 +3218,24 @@ class MainWindow(QMainWindow):
         self._ann_menu(menu, self.current, it.data(Qt.UserRole))
         menu.exec(self.panel.mapToGlobal(pos))
 
-    # ---- esportazione ----
+    # ---- export ----
     def export_annotated(self):
         if not self.docs:
             return
         if not self.annotations:
-            QMessageBox.information(self, APP_NAME, "Non ci sono annotazioni da esportare.")
+            QMessageBox.information(self, APP_NAME, _t("There are no annotations to export."))
             return
-        folder = QFileDialog.getExistingDirectory(self, "Cartella di destinazione per i PDF annotati")
+        folder = QFileDialog.getExistingDirectory(self, _t("Destination folder for the annotated PDFs"))
         if not folder:
             return
         written = []
         for lang, d in self.docs.items():
-            out_path = os.path.join(folder, os.path.splitext(os.path.basename(d.path))[0] + "_annotato.pdf")
+            out_path = os.path.join(folder, os.path.splitext(os.path.basename(d.path))[0] + _t("_annotated") + ".pdf")
             if os.path.abspath(out_path) == d.path:
                 continue
             self.write_annotated_pdf(lang, out_path)
             written.append(os.path.basename(out_path))
-        QMessageBox.information(self, APP_NAME, "PDF esportati:\n" + "\n".join(written))
+        QMessageBox.information(self, APP_NAME, _t("Exported PDFs:\n") + "\n".join(written))
 
     def write_annotated_pdf(self, lang, out_path):
         d = self.docs[lang]
@@ -3163,13 +3246,13 @@ class MainWindow(QMainWindow):
                 continue
             c = QColor(r["color"])
             rgb = (c.redF(), c.greenF(), c.blueF())
-            info = r["note"] + ("\n(posizione stimata)" if r["approx"] and r["note"] else "")
+            info = r["note"] + (_t("\n(estimated position)") if r["approx"] and r["note"] else "")
             if r["kind"] == "highlight":
                 by_page = defaultdict(list)
                 for p, x0, y0, x1, y1 in r["rects"]:
                     by_page[p].append(fitz.Rect(x0, y0, x1, y1))
                 for p, rs in by_page.items():
-                    page = out[p]          # riferimento alla pagina tenuto vivo
+                    page = out[p]          # reference to the page kept alive
                     a = page.add_highlight_annot(rs)
                     a.set_colors(stroke=rgb)
                     a.set_info(content=info, title=APP_NAME)
@@ -3184,21 +3267,21 @@ class MainWindow(QMainWindow):
         out.save(out_path, garbage=1, deflate=True)
         out.close()
 
-    # ---- OCR delle pagine scansionate ----
+    # ---- OCR of scanned pages ----
     def ocr_current(self):
-        """Menu: (ri)avvia l'OCR del PDF corrente, anche se rifiutato o interrotto prima."""
+        """Menu: (re)starts the OCR of the current PDF, even if refused or interrupted before."""
         d = self.docs.get(self.current)
         if d is None:
             return
         if not d.pending_ocr:
-            QMessageBox.information(self, APP_NAME, "Nessuna pagina scansionata da riconoscere "
-                                    "in questo PDF (o OCR già fatto).")
+            QMessageBox.information(self, APP_NAME, _t("No scanned pages to recognise "
+                                                       "in this PDF (or OCR already done)."))
             return
         self._ocr_skip.discard(d.hash)
         self._start_ocr(first=self.current)
 
     def _start_ocr(self, first=None):
-        """Avvia l'OCR del primo PDF con pagine scansionate non ancora riconosciute."""
+        """Starts the OCR of the first PDF with scanned pages not yet recognised."""
         if self.ocr_job is not None:
             return
         langs = sorted(self.docs, key=lambda l: l != first)
@@ -3211,14 +3294,15 @@ class MainWindow(QMainWindow):
             if missing:
                 r = QMessageBox.question(
                     self, APP_NAME,
-                    f"«{os.path.basename(d.path)}» ha {len(d.pending_ocr)} pagine scansionate "
-                    f"(immagini senza testo).\n\nPer riconoscerne il testo (OCR) servono i dati "
-                    f"di lingua {', '.join(missing)} (circa 15 MB ciascuno), da scaricare una sola "
-                    f"volta da github.com/tesseract-ocr/tessdata.\n\nScaricarli ora?")
+                    _t("«{name}» has {n} scanned pages (images without text).\n\n"
+                       "To recognise their text (OCR) the language data {data} is needed (about 15 MB "
+                       "each), to be downloaded only once from github.com/tesseract-ocr/tessdata.\n\n"
+                       "Download it now?").format(name=os.path.basename(d.path), n=len(d.pending_ocr),
+                                                  data=', '.join(missing)))
                 if r != QMessageBox.Yes:
                     self._ocr_skip.add(d.hash)
-                    self.statusBar().showMessage("Pagine scansionate senza OCR (Allineamento → "
-                                                 "Riconosci testo… per avviarlo)", 8000)
+                    self.statusBar().showMessage(_t("Scanned pages without OCR (Alignment → "
+                                                    "Recognise text… to start it)"), 8000)
                     continue
                 QApplication.setOverrideCursor(Qt.WaitCursor)
                 try:
@@ -3230,14 +3314,14 @@ class MainWindow(QMainWindow):
                     continue
                 QApplication.restoreOverrideCursor()
             args = ["--ocr", d.path, d.hash, tess, ",".join(map(str, d.pending_ocr))]
-            if not getattr(sys, "frozen", False):          # da sorgente: python polyglot_pdf.py
+            if not getattr(sys, "frozen", False):          # from source: python polyglot_pdf.py
                 args.insert(0, os.path.abspath(__file__))
             proc = QProcess(self)
             proc.finished.connect(lambda code, status, l=lang, h=d.hash: self._ocr_finished(l, h, code, status))
             progress = ocr_cache_path(d.hash, tess) + ".progress"
             self.ocr_job = {"proc": proc, "lang": lang, "hash": d.hash, "progress": progress,
                             "total": len(d.pending_ocr)}
-            self.ocr_label.setText(f"OCR {lang.upper()}: avvio…")
+            self.ocr_label.setText(_t("OCR {lang}: starting…").format(lang=lang.upper()))
             self.ocr_label.show()
             self.ocr_stop.show()
             self.ocr_timer.start()
@@ -3258,14 +3342,15 @@ class MainWindow(QMainWindow):
                 done, total = map(int, f.read().split())
         except (OSError, ValueError):
             return
-        self.ocr_label.setText(f"OCR {job['lang'].upper()}: pagina {min(done + 1, total)}/{total}")
+        self.ocr_label.setText(_t("OCR {lang}: page {page}/{total}").format(
+            lang=job['lang'].upper(), page=min(done + 1, total), total=total))
 
     def stop_ocr(self):
         if self.ocr_job is not None:
             self._ocr_skip.add(self.ocr_job["hash"])
             self._kill_ocr()
-            self.statusBar().showMessage("OCR interrotto: le pagine già riconosciute restano in cache "
-                                         "(Allineamento → Riconosci testo… per riprendere)", 8000)
+            self.statusBar().showMessage(_t("OCR stopped: the pages already recognised stay in the cache "
+                                            "(Alignment → Recognise text… to resume)"), 8000)
 
     def _kill_ocr(self):
         job, self.ocr_job = self.ocr_job, None
@@ -3290,20 +3375,20 @@ class MainWindow(QMainWindow):
             pass
         d = self.docs.get(lang)
         if d is None or d.hash != doc_hash:
-            pass                                   # PDF chiuso o sostituito nel frattempo
+            pass                                   # PDF closed or replaced in the meantime
         elif code != 0 or status != QProcess.NormalExit:
             self._ocr_skip.add(doc_hash)
-            QMessageBox.warning(self, APP_NAME, f"OCR non riuscito per {os.path.basename(d.path)}:\n"
-                                + (err or "il processo si è chiuso in modo inatteso"))
+            QMessageBox.warning(self, APP_NAME, _t("OCR failed for {name}:\n").format(name=os.path.basename(d.path))
+                                + (err or _t("the process ended unexpectedly")))
         else:
             n = len(d.pending_ocr)
-            self._ocr_skip.add(doc_hash)           # fatto: non ripartire in questa sessione
+            self._ocr_skip.add(doc_hash)           # done: do not restart in this session
             self._reload_text(lang)
-            self.statusBar().showMessage(f"OCR {lang.upper()}: {n} pagine riconosciute", 5000)
+            self.statusBar().showMessage(_t("OCR {lang}: {n} pages recognised").format(lang=lang.upper(), n=n), 5000)
         QTimer.singleShot(0, self._start_ocr)
 
     def _reload_text(self, lang):
-        """Ricarica un PDF dopo l'OCR (stesso file, blocchi nuovi) mantenendo la posizione."""
+        """Reloads a PDF after the OCR (same file, new blocks) keeping the position."""
         old, v = self.docs[lang], self.views[lang]
         state = (v.zoom, *v.get_position())
         if not self._load_doc(old.path, lang, fit=False):
@@ -3321,7 +3406,7 @@ class MainWindow(QMainWindow):
         if self.project_path:
             self.save_project(quiet=True)
 
-    # ---- allineamento ----
+    # ---- alignment ----
     def _start_alignment(self):
         if self.worker is not None and self.worker.isRunning():
             self._align_pending = True
@@ -3342,26 +3427,28 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def _add_exact_mappings(self):
-        """Lingue generate: allineamento esatto con la sorgente dal file di corrispondenza."""
+        """Generated languages: exact alignment with the source from the mapping file."""
         for tl, gm in self.gen_maps.items():
             sl = next((l for l, d in self.docs.items() if d.hash == gm["source"]["hash"]), None)
             if sl is None or sl == tl or tl not in self.docs:
                 continue
             if gm["source"].get("tk", gm["source"]["hash"]) != self.docs[sl].text_key:
-                continue    # blocchi della sorgente cambiati (OCR): allineamento stimato
+                continue    # blocks of the source changed (OCR): estimated alignment
             if (sl, tl) in self.mappings or (tl, sl) in self.mappings:
                 continue
             anchors = exact_anchors(gm["entries"], self.docs[tl])
             self.mappings[(sl, tl)] = build_mapping(anchors, self.docs[sl].n, self.docs[tl].n)
-            self.align_info[(sl, tl)] = f"{sl.upper()}↔{tl.upper()}: {len(anchors)} ancore (esatto)"
+            self.align_info[(sl, tl)] = _t("{a}↔{b}: {n} anchors (exact)").format(
+                a=sl.upper(), b=tl.upper(), n=len(anchors))
 
     def _on_pair_done(self, la, lb, ha, hb, xs, ys, n_anchors, method):
         if la not in self.docs or lb not in self.docs:
             return
         if self.docs[la].text_key != ha or self.docs[lb].text_key != hb:
-            return  # documento sostituito (o testo riconosciuto con l'OCR) nel frattempo
+            return  # document replaced (or text recognised with OCR) in the meantime
         self.mappings[(la, lb)] = (xs, ys)
-        self.align_info[(la, lb)] = f"{la.upper()}↔{lb.upper()}: {n_anchors} ancore ({method})"
+        self.align_info[(la, lb)] = _t("{a}↔{b}: {n} anchors ({method})").format(
+            a=la.upper(), b=lb.upper(), n=n_anchors, method=method)
         self._update_align_status(running=True)
         if self.annotations:
             self.refresh_annotations()
@@ -3372,7 +3459,7 @@ class MainWindow(QMainWindow):
             self._start_alignment()
         else:
             self._update_align_status()
-            self.statusBar().showMessage("Allineamento completato", 3000)
+            self.statusBar().showMessage(_t("Alignment completed"), 3000)
 
     def _update_align_status(self, running=False):
         n = len(self.docs)
@@ -3381,11 +3468,11 @@ class MainWindow(QMainWindow):
             self.status_align.setText("")
             return
         done = len(self.mappings)
-        txt = f"Allineamento: {done}/{total}"
+        txt = _t("Alignment: {done}/{total}").format(done=done, total=total)
         if running and done < total:
-            txt += " (in corso…)"
+            txt += _t(" (running…)")
         self.status_align.setText(txt)
-        self.status_align.setToolTip("\n".join(self.align_info.values()) or "nessuna coppia pronta")
+        self.status_align.setToolTip("\n".join(self.align_info.values()) or _t("no pair ready"))
 
     def realign(self):
         if not self.docs:
@@ -3401,9 +3488,9 @@ class MainWindow(QMainWindow):
         self.align_info.clear()
         self._start_alignment()
 
-    # ---- generazione lingua mancante (passo 3) ----
+    # ---- generation of a missing language (step 3) ----
     def _translatable_items(self, lang, pages=None):
-        """[(chiave unità, testo)] da tradurre."""
+        """[(unit key, text)] to translate."""
         d = self.docs[lang]
         out = []
         for key, i, _rect, ws in doc_units(d):
@@ -3415,14 +3502,14 @@ class MainWindow(QMainWindow):
 
     def _gen_busy(self) -> bool:
         if self.gen_worker is not None and self.gen_worker.isRunning():
-            QMessageBox.information(self, APP_NAME, "È già in corso una traduzione "
-                                    "(Traduzione → Interrompi generazione).")
+            QMessageBox.information(self, APP_NAME, _t("A translation is already running "
+                                                       "(Translation → Stop generation)."))
             return True
         return False
 
     def generate_language_dialog(self):
         if not self.docs:
-            QMessageBox.information(self, APP_NAME, "Aggiungi prima il PDF nella lingua sorgente.")
+            QMessageBox.information(self, APP_NAME, _t("First add the PDF in the source language."))
             return
         if self._gen_busy():
             return
@@ -3439,8 +3526,9 @@ class MainWindow(QMainWindow):
         p = dlg.values()
         self.glossaries = p.pop("glossaries")
         if p["tgt"] in self.docs and os.path.normcase(self.docs[p["tgt"]].path) != os.path.normcase(p["out_path"]):
-            r = QMessageBox.question(self, APP_NAME, f"La lingua {p['tgt'].upper()} esiste già nel progetto. "
-                                     "Sostituirla con quella generata, alla fine?")
+            r = QMessageBox.question(self, APP_NAME, _t("The language {lang} already exists in the project. "
+                                                        "Replace it with the generated one, at the end?").format(
+                                                            lang=p['tgt'].upper()))
             if r != QMessageBox.Yes:
                 return
         if self.project_path:
@@ -3452,9 +3540,9 @@ class MainWindow(QMainWindow):
         pages = set(range(min(p["test_pages"], len(src.page_sizes)))) if p["test"] else None
         items = self._translatable_items(p["src"], pages)
         if not items:
-            where = f"nelle prime {p['test_pages']} pagine" if pages else "nel documento"
-            QMessageBox.information(self, APP_NAME, f"Nessun testo da tradurre {where} "
-                                    "(PDF scansionato senza testo?).")
+            where = _t("in the first {n} pages").format(n=p['test_pages']) if pages else _t("in the document")
+            QMessageBox.information(self, APP_NAME, _t("No text to translate {where} "
+                                                       "(scanned PDF without text?).").format(where=where))
             return
         self._start_translation(dict(p, kind="generate", hash=src.hash), items)
 
@@ -3467,7 +3555,7 @@ class MainWindow(QMainWindow):
         job.update(cache=cache, items=items, t0=time.monotonic())
         self.gen_worker, self.gen_job = w, job
         self.gen_bar.setRange(0, 0)
-        self.gen_label.setText(f"Avvio traduzione {job['src'].upper()}→{job['tgt'].upper()}…")
+        self.gen_label.setText(_t("Starting translation {a}→{b}…").format(a=job['src'].upper(), b=job['tgt'].upper()))
         for wd in (self.gen_label, self.gen_bar, self.gen_stop):
             wd.show()
         self.a_gen_stop.setEnabled(True)
@@ -3479,7 +3567,7 @@ class MainWindow(QMainWindow):
             return
         self.gen_bar.setRange(0, max(total, 1))
         self.gen_bar.setValue(done)
-        what = {"retranslate": "Ritraduzione"}.get(job["kind"], "Prova" if job.get("test") else "Traduzione")
+        what = {"retranslate": _t("Retranslation")}.get(job["kind"], _t("Test") if job.get("test") else _t("Translation"))
         txt = f"{what} {job['src'].upper()}→{job['tgt'].upper()}: {done}/{total}"
         if eta >= 0 and done < total:
             txt += f" · ~{fmt_duration(eta)}"
@@ -3489,7 +3577,7 @@ class MainWindow(QMainWindow):
     def stop_generation(self):
         if self.gen_worker is not None and self.gen_worker.isRunning():
             self.gen_worker.requestInterruption()
-            self.gen_label.setText("Interruzione in corso…")
+            self.gen_label.setText(_t("Stopping…"))
 
     def _on_gen_finished(self):
         w, job = self.gen_worker, self.gen_job
@@ -3500,13 +3588,14 @@ class MainWindow(QMainWindow):
         if w is None or job is None:
             return
         if w.error:
-            QMessageBox.warning(self, APP_NAME, f"Traduzione interrotta da un errore:\n{w.error}\n\n"
-                                "I paragrafi già tradotti restano in cache: rilanciando "
-                                "«Genera lingua mancante» si riprende da lì.")
+            QMessageBox.warning(self, APP_NAME, _t("Translation stopped by an error:\n{err}\n\n"
+                                                   "The paragraphs already translated stay in the cache: "
+                                                   "running «Generate missing language» again resumes "
+                                                   "from there.").format(err=w.error))
             return
         if not w.completed:
-            self.statusBar().showMessage("Traduzione interrotta. I paragrafi tradotti restano in cache: "
-                                         "«Genera lingua mancante» riprende da lì.", 8000)
+            self.statusBar().showMessage(_t("Translation stopped. The translated paragraphs stay in the cache: "
+                                            "«Generate missing language» resumes from there."), 8000)
             return
         try:
             if job["kind"] == "retranslate":
@@ -3516,13 +3605,13 @@ class MainWindow(QMainWindow):
             else:
                 self._finish_generation(job)
         except Exception as e:
-            QMessageBox.warning(self, APP_NAME, f"Creazione del PDF tradotto non riuscita:\n{e}")
+            QMessageBox.warning(self, APP_NAME, _t("Creation of the translated PDF failed:\n{err}").format(err=e))
 
     def _job_source(self, job):
         src = self.docs.get(job["src"])
         if src is None or src.hash != job["hash"]:
-            QMessageBox.warning(self, APP_NAME, "Il PDF sorgente non è più aperto nel progetto "
-                                "(o è stato sostituito). Le traduzioni restano in cache.")
+            QMessageBox.warning(self, APP_NAME, _t("The source PDF is no longer open in the project "
+                                                   "(or it was replaced). The translations stay in the cache."))
             return None
         return src
 
@@ -3535,22 +3624,25 @@ class MainWindow(QMainWindow):
         left = sum(len(t) for i, t in all_items if cache.get(i, t) is None)
         rate = cache.rate()
         if left == 0:
-            est = "già tutto tradotto"
+            est = _t("everything already translated")
         elif rate:
-            est = f"circa {fmt_duration(rate * left)}"
+            est = _t("about {time}").format(time=fmt_duration(rate * left))
         else:
-            est = "non disponibile"
+            est = _t("not available")
         box = QMessageBox(self)
-        box.setWindowTitle("Prova completata")
-        where = "della prima pagina" if job["test_pages"] == 1 else f"delle prime {job['test_pages']} pagine"
-        box.setText(f"Tradotti {len(job['items'])} paragrafi {where} "
-                    f"in {fmt_duration(time.monotonic() - job['t0'])}.\n\n"
-                    f"Tempo stimato per il resto del documento ({len(src.page_sizes)} pagine, "
-                    f"{len(all_items)} paragrafi): {est}.\n"
-                    "La traduzione si può interrompere e riprendere in qualsiasi momento.")
-        b_all = box.addButton("Traduci tutto", QMessageBox.AcceptRole)
-        b_prev = box.addButton("Apri anteprima", QMessageBox.ActionRole)
-        box.addButton("Chiudi", QMessageBox.RejectRole)
+        box.setWindowTitle(_t("Test completed"))
+        where = _t("of the first page") if job["test_pages"] == 1 else _t("of the first {n} pages").format(
+            n=job['test_pages'])
+        box.setText(_t("Translated {n} paragraphs {where} "
+                       "in {time}.\n\n"
+                       "Estimated time for the rest of the document ({pages} pages, "
+                       "{total} paragraphs): {est}.\n"
+                       "The translation can be stopped and resumed at any time.").format(
+                           n=len(job['items']), where=where, time=fmt_duration(time.monotonic() - job['t0']),
+                           pages=len(src.page_sizes), total=len(all_items), est=est))
+        b_all = box.addButton(_t("Translate everything"), QMessageBox.AcceptRole)
+        b_prev = box.addButton(_t("Open preview"), QMessageBox.ActionRole)
+        box.addButton(_t("Close"), QMessageBox.RejectRole)
         while True:
             box.exec()
             if box.clickedButton() is not b_prev:
@@ -3576,7 +3668,7 @@ class MainWindow(QMainWindow):
         if src is None:
             return
         cache, out, tgt = job["cache"], job["out_path"], job["tgt"]
-        old = load_gen_map(out)                 # le correzioni manuali precedenti si conservano
+        old = load_gen_map(out)                 # previous manual corrections are kept
         edited = ({e["key"]: e for e in old["entries"] if e.get("edited")}
                   if old and old["source"]["hash"] == src.hash else {})
         entries = []
@@ -3597,13 +3689,13 @@ class MainWindow(QMainWindow):
               "created": datetime.now().isoformat(timespec="seconds"), "entries": entries}
         self._write_generated(tgt, src, gm, out)
         n_warn = sum(1 for e in entries if e["warn"])
-        QMessageBox.information(self, APP_NAME, f"Lingua {tgt.upper()} generata:\n{out}\n\n"
-                                + (f"{n_warn} paragrafi da rivedere (numeri o sigle non ritrovati): "
-                                   "Traduzione → Paragrafi da rivedere." if n_warn else
-                                   "Tasto destro su un paragrafo per correggerne la traduzione."))
+        QMessageBox.information(self, APP_NAME, _t("Language {lang} generated:\n{path}\n\n").format(lang=tgt.upper(), path=out)
+                                + (_t("{n} paragraphs to review (numbers or acronyms not found): "
+                                      "Translation → Paragraphs to review.").format(n=n_warn) if n_warn else
+                                   _t("Right click on a paragraph to correct its translation.")))
 
     def _write_generated(self, lang, src, gm, out):
-        """Ricostruisce il PDF tradotto, salva il file di corrispondenza e (ri)carica la lingua."""
+        """Rebuilds the translated PDF, saves the mapping file and (re)loads the language."""
         translations = {e["key"]: e["text"] for e in gm["entries"] if e.get("text")}
         tmp = out + ".tmp"
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -3621,7 +3713,7 @@ class MainWindow(QMainWindow):
             v = self.views[lang]
             state = (v.zoom, *v.get_position())
         if same_file:
-            old.doc.close()              # su Windows un file aperto non si può sostituire
+            old.doc.close()              # on Windows an open file cannot be replaced
         try:
             os.replace(tmp, out)
         except OSError:
@@ -3647,8 +3739,8 @@ class MainWindow(QMainWindow):
             self.save_project(quiet=True)
 
     def _reanchor(self, lang, old_hash=None):
-        """Le annotazioni di una lingua seguono le parole: dopo la rigenerazione del PDF
-        (old_hash) o quando i blocchi sono cambiati per l'OCR (text_key diverso)."""
+        """The annotations of a language follow the words: after regenerating the PDF
+        (old_hash) or when the blocks changed because of the OCR (different text_key)."""
         d = self.docs[lang]
         for ann in self.annotations:
             for a in (ann["src"], *ann.get("overrides", {}).values()):
@@ -3672,21 +3764,22 @@ class MainWindow(QMainWindow):
                 a["hash"], a["tk"] = d.hash, d.text_key
 
     def _gen_source(self, gm):
-        """Documento sorgente di una lingua generata (dal progetto o riaperto dal disco)."""
+        """Source document of a generated language (from the project or reopened from disk)."""
         d = next((d for d in self.docs.values() if d.hash == gm["source"]["hash"]), None)
         if d is not None:
             return d, False
         p = gm["source"]["path"]
         if os.path.exists(p) and file_hash(p) == gm["source"]["hash"]:
             return Document(p, gm["source"]["lang"]), True
-        QMessageBox.warning(self, APP_NAME, f"PDF sorgente non trovato o modificato:\n{p}")
+        QMessageBox.warning(self, APP_NAME, _t("Source PDF not found or modified:\n{path}").format(path=p))
         return None, False
 
     def regenerate_language(self, lang):
         gm = self.gen_maps.get(lang)
         if gm is None:
-            QMessageBox.information(self, APP_NAME, "La lingua corrente non è stata generata con "
-                                    f"{APP_NAME} (manca il file {GEN_MAP_EXT} corrispondente).")
+            QMessageBox.information(self, APP_NAME, _t("The current language was not generated with "
+                                                       "{app} (the matching {ext} file is missing).").format(
+                                                           app=APP_NAME, ext=GEN_MAP_EXT))
             return
         src, temporary = self._gen_source(gm)
         if src is None:
@@ -3694,7 +3787,7 @@ class MainWindow(QMainWindow):
         try:
             self._write_generated(lang, src, gm, self.docs[lang].path)
         except Exception as e:
-            QMessageBox.warning(self, APP_NAME, f"Rigenerazione non riuscita:\n{e}")
+            QMessageBox.warning(self, APP_NAME, _t("Regeneration failed:\n{err}").format(err=e))
         finally:
             if temporary:
                 src.doc.close()
@@ -3753,18 +3846,21 @@ class MainWindow(QMainWindow):
         lang = self.current
         gm = self.gen_maps.get(lang) if lang else None
         if gm is None:
-            QMessageBox.information(self, APP_NAME, f"La lingua corrente non è stata generata con {APP_NAME}.")
+            QMessageBox.information(self, APP_NAME, _t("The current language was not generated with {app}.").format(
+                app=APP_NAME))
             return
         rows = [e for e in gm["entries"] if e.get("warn")]
         if not rows:
-            QMessageBox.information(self, APP_NAME, "Nessun paragrafo da rivedere: tutti i numeri "
-                                    "e le sigle dell'originale compaiono nella traduzione.")
+            QMessageBox.information(self, APP_NAME, _t("No paragraph to review: all the numbers "
+                                                       "and acronyms of the original appear in the translation."))
             return
-        labels = [f"p. {e['page'] + 1} — manca {', '.join(e['warn'][:4])} — «{short(e['text'] or '', 60)}»"
+        labels = [_t("p. {page} — missing {tokens} — «{text}»").format(
+                      page=e['page'] + 1, tokens=', '.join(e['warn'][:4]), text=short(e['text'] or '', 60))
                   for e in rows]
-        item, ok = QInputDialog.getItem(self, "Paragrafi da rivedere",
-                                        f"{len(rows)} paragrafi con numeri o sigle non ritrovati "
-                                        "nella traduzione\n(tasto destro sul paragrafo per correggerlo):",
+        item, ok = QInputDialog.getItem(self, _t("Paragraphs to review"),
+                                        _t("{n} paragraphs with numbers or acronyms not found "
+                                           "in the translation\n(right click on the paragraph to correct it):").format(
+                                               n=len(rows)),
                                         labels, 0, False)
         if ok:
             e = rows[labels.index(item)]
@@ -3772,7 +3868,7 @@ class MainWindow(QMainWindow):
             self._flash_entry(lang, e["key"])
             self._update_page_label()
 
-    # ---- progetto ----
+    # ---- project ----
     def _state(self):
         v = self._view()
         if v is None:
@@ -3800,8 +3896,8 @@ class MainWindow(QMainWindow):
         if not self.docs:
             return False
         if save_as or not self.project_path:
-            path, _ = QFileDialog.getSaveFileName(self, "Salva progetto", "progetto" + PROJECT_EXT,
-                                                  f"Progetto {APP_NAME} (*{PROJECT_EXT})")
+            path, _ = QFileDialog.getSaveFileName(self, _t("Save project"), _t("project") + PROJECT_EXT,
+                                                  _t("{app} project (*{ext})").format(app=APP_NAME, ext=PROJECT_EXT))
             if not path:
                 return False
             if not path.endswith(PROJECT_EXT):
@@ -3812,7 +3908,7 @@ class MainWindow(QMainWindow):
         for lang, d in self.docs.items():
             try:
                 rel = os.path.relpath(d.path, base)
-            except ValueError:  # unità diverse su Windows
+            except ValueError:  # different drives on Windows
                 rel = d.path
             docs.append({"lang": lang, "path": rel})
         data = {"app": APP_NAME, "version": 2, "documents": docs,
@@ -3824,16 +3920,16 @@ class MainWindow(QMainWindow):
                 json.dump(data, f, ensure_ascii=False, indent=1)
             os.replace(tmp, self.project_path)
         except OSError as e:
-            QMessageBox.warning(self, APP_NAME, f"Salvataggio non riuscito:\n{e}")
+            QMessageBox.warning(self, APP_NAME, _t("Saving failed:\n{err}").format(err=e))
             return False
         self._update_title()
         if not quiet:
-            self.statusBar().showMessage("Progetto salvato", 3000)
+            self.statusBar().showMessage(_t("Project saved"), 3000)
         return True
 
     def open_project_dialog(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Apri progetto", "",
-                                              f"Progetto {APP_NAME} (*{PROJECT_EXT} *.json)")
+        path, _ = QFileDialog.getOpenFileName(self, _t("Open project"), "",
+                                              _t("{app} project (*{ext} *.json)").format(app=APP_NAME, ext=PROJECT_EXT))
         if path:
             self.open_project(path)
 
@@ -3842,7 +3938,7 @@ class MainWindow(QMainWindow):
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, ValueError) as e:
-            QMessageBox.warning(self, APP_NAME, f"Progetto non leggibile:\n{e}")
+            QMessageBox.warning(self, APP_NAME, _t("Project not readable:\n{err}").format(err=e))
             return
         self._close_all()
         base = os.path.dirname(os.path.abspath(path))
@@ -3854,11 +3950,11 @@ class MainWindow(QMainWindow):
             else:
                 missing.append(p)
         if missing:
-            QMessageBox.warning(self, APP_NAME, "File non trovati:\n" + "\n".join(missing))
+            QMessageBox.warning(self, APP_NAME, _t("Files not found:\n") + "\n".join(missing))
         self.project_path = os.path.abspath(path)
         self.annotations = data.get("annotations", [])
         self.glossaries = data.get("glossaries", {})
-        for lang in self.docs:          # blocchi cambiati dall'ultimo salvataggio (OCR)
+        for lang in self.docs:          # blocks changed since the last save (OCR)
             self._reanchor(lang)
         self._rebuild_lang_bar()
         self._start_alignment()
@@ -3877,10 +3973,10 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def _maybe_save(self) -> bool:
-        """True se si può procedere (salvato o scartato)."""
+        """True if it is possible to go on (saved or discarded)."""
         if self.project_path:
             return self.save_project(quiet=True)
-        r = QMessageBox.question(self, APP_NAME, "Salvare il progetto (con note ed evidenziazioni)?",
+        r = QMessageBox.question(self, APP_NAME, _t("Save the project (with notes and highlights)?"),
                                  QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
         if r == QMessageBox.Cancel:
             return False
@@ -3888,7 +3984,7 @@ class MainWindow(QMainWindow):
             return self.save_project()
         return True
 
-    # ---- drag & drop / chiusura ----
+    # ---- drag & drop / closing ----
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
             e.acceptProposedAction()
@@ -3904,8 +4000,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):
         if self.gen_worker is not None and self.gen_worker.isRunning():
-            r = QMessageBox.question(self, APP_NAME, "È in corso una traduzione. Interromperla?\n"
-                                     "I paragrafi già tradotti restano in cache e si potrà riprendere.")
+            r = QMessageBox.question(self, APP_NAME, _t("A translation is running. Stop it?\n"
+                                                        "The paragraphs already translated stay in the cache "
+                                                        "and it can be resumed."))
             if r != QMessageBox.Yes:
                 e.ignore()
                 return
@@ -3917,30 +4014,287 @@ class MainWindow(QMainWindow):
         if self.worker is not None and self.worker.isRunning():
             self.worker.requestInterruption()
             self.worker.wait(3000)
-        self._kill_ocr()        # le pagine già riconosciute restano in cache
+        self._kill_ocr()        # the pages already recognised stay in the cache
         self.probe_timer.stop()
         for v in self.views.values():
             v.close_popup()
-        for w in self.findChildren(QThread):        # traduzioni al volo e controllo di Ollama
+        for w in self.findChildren(QThread):        # on-the-fly translations and Ollama check
             w.requestInterruption()
             w.wait(2000)
         e.accept()
 
 
+# --------------------------------------------------------------------------- #
+# Italian translations of the interface texts (English source text -> Italian).
+# A missing entry simply shows the English text.
+# --------------------------------------------------------------------------- #
+IT_TEXTS = {
+    # general, OCR, alignment labels, colours
+    "Download of {name}.traineddata failed: {err}": "Download di {name}.traineddata non riuscito: {err}",
+    "semantic": "semantico",
+    "semantic, Ollama": "semantico, Ollama",
+    "heuristic": "euristico",
+    "Yellow": "Giallo",
+    "Green": "Verde",
+    "Light blue": "Azzurro",
+    "Pink": "Rosa",
+    "Orange": "Arancio",
+    # alignment
+    "Loading the semantic model (downloaded at the first start)…": "Caricamento modello semantico (al primo avvio viene scaricato)…",
+    "Semantic model not available: {err}": "Modello semantico non disponibile: {err}",
+    "Heuristic alignment (for the semantic one: ollama pull {model})": "Allineamento euristico (per quello semantico: ollama pull {model})",
+    "Alignment {a} ↔ {b}…": "Allineamento {a} ↔ {b}…",
+    "Semantic alignment failed ({err}): heuristic": "Allineamento semantico non riuscito ({err}): euristico",
+    # Ollama
+    "Ollama not reachable at {url} ({reason})": "Ollama non raggiungibile su {url} ({reason})",
+    "Loading the model into memory (30–60 s, only the first time)": "Caricamento del modello in memoria (30–60 s, solo la prima volta)",
+    # "Generate missing language" dialog
+    "Generate missing language": "Genera lingua mancante",
+    "Only a test on the first": "Solo prova sulle prime",
+    "pages, with an estimate of the total time": "pagine, con stima del tempo totale",
+    "Browse…": "Sfoglia…",
+    "One entry per line, for example:\ncontrol cabinet = Schaltschrank\ndisconnector = Trennschalter\n# lines starting with # are comments":
+        "Una voce per riga, ad esempio:\nquadro elettrico = Schaltschrank\nsezionatore = Trennschalter\n# le righe con # sono commenti",
+    "Source language:": "Lingua sorgente:",
+    "Language to generate:": "Lingua da generare:",
+    "Ollama model:": "Modello Ollama:",
+    "Generated PDF file:": "File PDF generato:",
+    "Glossary:": "Glossario:",
+    "Start": "Avvia",
+    "Generated PDF": "PDF generato",
+    "{pages} pages, {n} paragraphs to translate": "{pages} pagine, {n} paragrafi da tradurre",
+    "1 page, {n} paragraphs to translate": "1 pagina, {n} paragrafi da tradurre",
+    " — <b>{done} already translated</b> (it resumes from there)": " — <b>già tradotti {done}</b> (si riprende da lì)",
+    "<span style='color:#c0392b'>⚠ {err}<br>Install Ollama from https://ollama.com, start it and then run: <code>ollama pull {model}</code></span>":
+        "<span style='color:#c0392b'>⚠ {err}<br>Installa Ollama da https://ollama.com, avvialo e poi esegui: <code>ollama pull {model}</code></span>",
+    "<span style='color:#c0392b'>⚠ Model not installed. Run: <code>ollama pull {model}</code></span>":
+        "<span style='color:#c0392b'>⚠ Modello non installato. Esegui: <code>ollama pull {model}</code></span>",
+    "Enter the language to generate as a 2–3 letter code (e.g. de, fr, en).": "Indica la lingua da generare con il codice di 2–3 lettere (es. de, fr, en).",
+    "The language to generate must be different from the source.": "La lingua da generare deve essere diversa dalla sorgente.",
+    "Enter the Ollama model.": "Indica il modello Ollama.",
+    "Enter the PDF file to generate.": "Indica il file PDF da generare.",
+    "The chosen file is already a document of the project in another language.": "Il file indicato è già un documento del progetto in un'altra lingua.",
+    # "Edit paragraph translation" dialog
+    "Edit paragraph translation": "Modifica traduzione del paragrafo",
+    "Original ({lang}):": "Originale ({lang}):",
+    "Translation ({lang}):": "Traduzione ({lang}):",
+    "⚠ Not found in the translation: ": "⚠ Non ritrovati nella traduzione: ",
+    "Apply and regenerate the page": "Applica e rigenera la pagina",
+    # translation popup, view
+    "Translation {lang} →": "Traduzione {lang} →",
+    "Target language": "Lingua di destinazione",
+    "Close (Esc)": "Chiudi (Esc)",
+    "Translating…": "Traduzione in corso…",
+    "Copy": "Copia",
+    "Save as note": "Salva come nota",
+    "Highlights the selection and saves the translation in the note": "Evidenzia la selezione e salva la traduzione nella nota",
+    "(empty translation)": "(traduzione vuota)",
+    "Translation failed: {err}": "Traduzione non riuscita: {err}",
+    "(position estimated from the translation)": "(posizione stimata dalla traduzione)",
+    "Note": "Nota",
+    # main window, menus
+    "Open a project (Ctrl+O) or add PDFs (Ctrl+L)\nor drag PDF files here": "Apri un progetto (Ctrl+O) o aggiungi PDF (Ctrl+L)\noppure trascina qui i file PDF",
+    "Stop": "Interrompi",
+    "Stop OCR": "Interrompi OCR",
+    "New project": "Nuovo progetto",
+    "Open project…": "Apri progetto…",
+    "Save project": "Salva progetto",
+    "Save as…": "Salva con nome…",
+    "Add PDF/language…": "Aggiungi PDF/lingua…",
+    "Remove current language": "Rimuovi lingua corrente",
+    "Export annotated PDFs…": "Esporta PDF annotati…",
+    "Quit": "Esci",
+    "Fit width": "Adatta larghezza",
+    "Go to page…": "Vai a pagina…",
+    "Next language": "Lingua successiva",
+    "Previous language": "Lingua precedente",
+    "Flash the matching block when switching language": "Evidenzia blocco corrispondente al cambio lingua",
+    "Recompute alignment": "Ricalcola allineamento",
+    "Recognise text in scanned pages (OCR)": "Riconosci testo nelle pagine scansionate (OCR)",
+    "Highlighter": "Evidenziatore",
+    "Highlighter mode: the selection is highlighted at once (Ctrl+Shift+H)": "Modalità evidenziatore: la selezione viene evidenziata subito (Ctrl+Shift+H)",
+    "Click on the page to insert a note (Ctrl+Shift+N)": "Clicca sulla pagina per inserire una nota (Ctrl+Shift+N)",
+    "Highlight selection": "Evidenzia selezione",
+    "Highlight selection with note…": "Evidenzia selezione con nota…",
+    "Copy selected text": "Copia testo selezionato",
+    "Translate selection": "Traduci selezione",
+    "Translates the selected text with Ollama (T)": "Traduce il testo selezionato con Ollama (T)",
+    "About PolyglotPDF…": "Informazioni su PolyglotPDF…",
+    "Undo": "Annulla",
+    "Cancel selection/mode": "Annulla selezione/modalità",
+    "&Edit": "&Modifica",
+    "Highlighter colour": "Colore evidenziatore",
+    "&View": "&Vista",
+    "&Alignment": "&Allineamento",
+    "Generate missing language…": "Genera lingua mancante…",
+    "Stop generation": "Interrompi generazione",
+    "Paragraphs to review…": "Paragrafi da rivedere…",
+    "Regenerate PDF of the current language": "Rigenera PDF della lingua corrente",
+    "&Translation": "&Traduzione",
+    "&Help": "&?",
+    "Highlighter colour (Alt+1…5)": "Colore evidenziatore (Alt+1…5)",
+    "Main": "Principale",
+    "Languages": "Lingue",
+    "Notes and highlights": "Note ed evidenziazioni",
+    "untitled": "senza nome",
+    # about, Ollama status, selection translation, documents
+    "active at {url}<br>Models: {models}": "attivo su {url}<br>Modelli: {models}",
+    "not detected ({err})": "non rilevato ({err})",
+    "check in progress": "controllo in corso",
+    "About {app}": "Informazioni su {app}",
+    "<h3>{app} {version}</h3><p>Reading the same PDF document in several languages, with synchronised notes and highlights, OCR and local translation.</p><p><b>Ollama:</b> {ollama}</p><p><b>Data folder:</b> {data}<br><b>Python</b> {python} · <b>PyMuPDF</b> {pymupdf} · <b>Qt</b> {qt}</p>":
+        "<h3>{app} {version}</h3><p>Lettura dello stesso documento PDF in più lingue, con note ed evidenziazioni sincronizzate, OCR e traduzione locale.</p><p><b>Ollama:</b> {ollama}</p><p><b>Cartella dati:</b> {data}<br><b>Python</b> {python} · <b>PyMuPDF</b> {pymupdf} · <b>Qt</b> {qt}</p>",
+    "● Translation: checking…": "● Traduzione: controllo…",
+    "Checking Ollama": "Controllo di Ollama in corso",
+    "● Translation available": "● Traduzione disponibile",
+    "Ollama active at {url}\nTranslation models: ": "Ollama attivo su {url}\nModelli di traduzione: ",
+    "● Translation not available": "● Traduzione non disponibile",
+    "Ollama is running but the translation model is missing.\nInstall it with:  ollama pull {model}":
+        "Ollama è attivo ma manca il modello di traduzione.\nInstallalo con:  ollama pull {model}",
+    "Ollama not detected at {url}.\nInstall it from https://ollama.com and start it.":
+        "Ollama non rilevato su {url}.\nInstallalo da https://ollama.com e avvialo.",
+    "\n\nClick to check again (automatic check every 10 s)": "\n\nClic per ricontrollare (controllo automatico ogni 10 s)",
+    "Select the text to translate first": "Seleziona prima il testo da tradurre",
+    "Translation not available.\n\n": "Traduzione non disponibile.\n\n",
+    "  {lang}  ·  Page {page} / {pages}  ·  {zoom:.0f}%  ": "  {lang}  ·  Pag. {page} / {pages}  ·  {zoom:.0f}%  ",
+    "Document language": "Lingua del documento",
+    "Language of «{name}»:": "Lingua di «{name}»:",
+    "Add PDF": "Aggiungi PDF",
+    "The language {lang} already exists. Replace the PDF?": "La lingua {lang} esiste già. Sostituire il PDF?",
+    "Cannot open {path}:\n{err}": "Impossibile aprire {path}:\n{err}",
+    # annotations
+    "Go to page": "Vai a pagina",
+    "Page:": "Pagina:",
+    "p. {page}  {mark}📌 Note": "p. {page}  {mark}📌 Nota",
+    "Notes and highlights ({n})": "Note ed evidenziazioni ({n})",
+    "Nothing to undo": "Niente da annullare",
+    "Undone": "Annullato",
+    "Click on the page where the note should go (Esc to cancel)": "Clicca sulla pagina dove inserire la nota (Esc per annullare)",
+    "Text copied": "Testo copiato",
+    "First select some text by dragging the mouse": "Seleziona prima del testo trascinando il mouse",
+    "Note text:": "Testo della nota:",
+    "New note": "Nuova nota",
+    "Annotation deleted (Ctrl+Z to undo)": "Annotazione eliminata (Ctrl+Z per annullare)",
+    "the matching text": "il testo corrispondente",
+    "the matching point": "il punto corrispondente",
+    "Select {what} in {lang} (Esc to cancel)": "Seleziona {what} in {lang} (Esc per annullare)",
+    "Position in {lang} updated": "Posizione in {lang} aggiornata",
+    "Highlight — {colour}": "Evidenzia — {colour}",
+    "Highlight with note…": "Evidenzia con nota…",
+    "Copy text": "Copia testo",
+    "Translate into {name} ({code})": "Traduci in {name} ({code})",
+    " — translation not available": " — traduzione non disponibile",
+    "Translate into": "Traduci in",
+    # annotation menu, export, OCR
+    "Edit note…": "Modifica nota…",
+    "Add note…": "Aggiungi nota…",
+    "Colour": "Colore",
+    "Fix position in {lang}": "Correggi posizione in {lang}",
+    "Restore automatic position in {lang}": "Ripristina posizione automatica in {lang}",
+    "Delete": "Elimina",
+    "Add note here…": "Aggiungi nota qui…",
+    "Edit paragraph translation…": "Modifica traduzione del paragrafo…",
+    "Translate paragraph again ({model})": "Ritraduci paragrafo ({model})",
+    "There are no annotations to export.": "Non ci sono annotazioni da esportare.",
+    "Destination folder for the annotated PDFs": "Cartella di destinazione per i PDF annotati",
+    "_annotated": "_annotato",
+    "Exported PDFs:\n": "PDF esportati:\n",
+    "\n(estimated position)": "\n(posizione stimata)",
+    "No scanned pages to recognise in this PDF (or OCR already done).": "Nessuna pagina scansionata da riconoscere in questo PDF (o OCR già fatto).",
+    "«{name}» has {n} scanned pages (images without text).\n\nTo recognise their text (OCR) the language data {data} is needed (about 15 MB each), to be downloaded only once from github.com/tesseract-ocr/tessdata.\n\nDownload it now?":
+        "«{name}» ha {n} pagine scansionate (immagini senza testo).\n\nPer riconoscerne il testo (OCR) servono i dati di lingua {data} (circa 15 MB ciascuno), da scaricare una sola volta da github.com/tesseract-ocr/tessdata.\n\nScaricarli ora?",
+    "Scanned pages without OCR (Alignment → Recognise text… to start it)": "Pagine scansionate senza OCR (Allineamento → Riconosci testo… per avviarlo)",
+    "OCR {lang}: starting…": "OCR {lang}: avvio…",
+    "OCR {lang}: page {page}/{total}": "OCR {lang}: pagina {page}/{total}",
+    "OCR stopped: the pages already recognised stay in the cache (Alignment → Recognise text… to resume)":
+        "OCR interrotto: le pagine già riconosciute restano in cache (Allineamento → Riconosci testo… per riprendere)",
+    "OCR failed for {name}:\n": "OCR non riuscito per {name}:\n",
+    "the process ended unexpectedly": "il processo si è chiuso in modo inatteso",
+    "OCR {lang}: {n} pages recognised": "OCR {lang}: {n} pagine riconosciute",
+    # alignment status
+    "{a}↔{b}: {n} anchors (exact)": "{a}↔{b}: {n} ancore (esatto)",
+    "{a}↔{b}: {n} anchors ({method})": "{a}↔{b}: {n} ancore ({method})",
+    "Alignment completed": "Allineamento completato",
+    # alignment status, generation
+    "Alignment: {done}/{total}": "Allineamento: {done}/{total}",
+    " (running…)": " (in corso…)",
+    "no pair ready": "nessuna coppia pronta",
+    "A translation is already running (Translation → Stop generation).": "È già in corso una traduzione (Traduzione → Interrompi generazione).",
+    "First add the PDF in the source language.": "Aggiungi prima il PDF nella lingua sorgente.",
+    "The language {lang} already exists in the project. Replace it with the generated one, at the end?":
+        "La lingua {lang} esiste già nel progetto. Sostituirla con quella generata, alla fine?",
+    "in the first {n} pages": "nelle prime {n} pagine",
+    "in the document": "nel documento",
+    "No text to translate {where} (scanned PDF without text?).": "Nessun testo da tradurre {where} (PDF scansionato senza testo?).",
+    "Starting translation {a}→{b}…": "Avvio traduzione {a}→{b}…",
+    "Retranslation": "Ritraduzione",
+    "Test": "Prova",
+    "Translation": "Traduzione",
+    "Stopping…": "Interruzione in corso…",
+    "Translation stopped by an error:\n{err}\n\nThe paragraphs already translated stay in the cache: running «Generate missing language» again resumes from there.":
+        "Traduzione interrotta da un errore:\n{err}\n\nI paragrafi già tradotti restano in cache: rilanciando «Genera lingua mancante» si riprende da lì.",
+    "Translation stopped. The translated paragraphs stay in the cache: «Generate missing language» resumes from there.":
+        "Traduzione interrotta. I paragrafi tradotti restano in cache: «Genera lingua mancante» riprende da lì.",
+    "Creation of the translated PDF failed:\n{err}": "Creazione del PDF tradotto non riuscita:\n{err}",
+    "The source PDF is no longer open in the project (or it was replaced). The translations stay in the cache.":
+        "Il PDF sorgente non è più aperto nel progetto (o è stato sostituito). Le traduzioni restano in cache.",
+    "everything already translated": "già tutto tradotto",
+    "about {time}": "circa {time}",
+    "not available": "non disponibile",
+    "Test completed": "Prova completata",
+    "of the first page": "della prima pagina",
+    "of the first {n} pages": "delle prime {n} pagine",
+    "Translated {n} paragraphs {where} in {time}.\n\nEstimated time for the rest of the document ({pages} pages, {total} paragraphs): {est}.\nThe translation can be stopped and resumed at any time.":
+        "Tradotti {n} paragrafi {where} in {time}.\n\nTempo stimato per il resto del documento ({pages} pagine, {total} paragrafi): {est}.\nLa traduzione si può interrompere e riprendere in qualsiasi momento.",
+    "Translate everything": "Traduci tutto",
+    "Open preview": "Apri anteprima",
+    "Close": "Chiudi",
+    "Language {lang} generated:\n{path}\n\n": "Lingua {lang} generata:\n{path}\n\n",
+    "{n} paragraphs to review (numbers or acronyms not found): Translation → Paragraphs to review.":
+        "{n} paragrafi da rivedere (numeri o sigle non ritrovati): Traduzione → Paragrafi da rivedere.",
+    "Right click on a paragraph to correct its translation.": "Tasto destro su un paragrafo per correggerne la traduzione.",
+    # regeneration, review, project
+    "Source PDF not found or modified:\n{path}": "PDF sorgente non trovato o modificato:\n{path}",
+    "The current language was not generated with {app} (the matching {ext} file is missing).":
+        "La lingua corrente non è stata generata con {app} (manca il file {ext} corrispondente).",
+    "Regeneration failed:\n{err}": "Rigenerazione non riuscita:\n{err}",
+    "The current language was not generated with {app}.": "La lingua corrente non è stata generata con {app}.",
+    "No paragraph to review: all the numbers and acronyms of the original appear in the translation.":
+        "Nessun paragrafo da rivedere: tutti i numeri e le sigle dell'originale compaiono nella traduzione.",
+    "p. {page} — missing {tokens} — «{text}»": "p. {page} — manca {tokens} — «{text}»",
+    "Paragraphs to review": "Paragrafi da rivedere",
+    "{n} paragraphs with numbers or acronyms not found in the translation\n(right click on the paragraph to correct it):":
+        "{n} paragrafi con numeri o sigle non ritrovati nella traduzione\n(tasto destro sul paragrafo per correggerlo):",
+    "project": "progetto",
+    "{app} project (*{ext})": "Progetto {app} (*{ext})",
+    "Saving failed:\n{err}": "Salvataggio non riuscito:\n{err}",
+    "Project saved": "Progetto salvato",
+    "Open project": "Apri progetto",
+    "{app} project (*{ext} *.json)": "Progetto {app} (*{ext} *.json)",
+    "Project not readable:\n{err}": "Progetto non leggibile:\n{err}",
+    "Files not found:\n": "File non trovati:\n",
+    "Save the project (with notes and highlights)?": "Salvare il progetto (con note ed evidenziazioni)?",
+    "A translation is running. Stop it?\nThe paragraphs already translated stay in the cache and it can be resumed.":
+        "È in corso una traduzione. Interromperla?\nI paragrafi già tradotti restano in cache e si potrà riprendere.",
+}
+
+
 def main():
+    global UI_LANG
     os.makedirs(CACHE_DIR, exist_ok=True)
-    if len(sys.argv) > 1 and sys.argv[1] == "--ocr":     # processo OCR avviato dall'app
+    if len(sys.argv) > 1 and sys.argv[1] == "--ocr":     # OCR process started by the app
         try:
             code = ocr_main(sys.argv[2:])
-        except Exception as e:     # l'.exe non ha console: l'errore passa da un file
+        except Exception as e:     # the .exe has no console: the error goes through a file
             with open(OCR_ERROR_FILE, "w", encoding="utf-8") as f:
                 f.write(f"{e.__class__.__name__}: {e}")
             code = 1
         sys.exit(code)
+    UI_LANG = default_ui_lang()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
-    here = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))   # anche da .exe
+    here = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))   # also from the .exe
     for icon in (os.path.join(here, "polyglot_pdf.ico"), os.path.join(here, "packaging", "polyglot_pdf.ico")):
         if os.path.exists(icon):
             app.setWindowIcon(QIcon(icon))

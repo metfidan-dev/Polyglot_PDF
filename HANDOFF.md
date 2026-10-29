@@ -1,72 +1,67 @@
-# PolyglotPDF — Stato del progetto (handoff per VS Code)
+# PolyglotPDF — Project status and technical notes
 
-> Aggiornato al 26.10.2026 (versione 0.5.1 da sorgente — installer fermo alla 0.4.0, portabile alla 0.4.1; build solo su richiesta) · File principale: `polyglot_pdf.py` (singolo file, ~3750 righe)
-> Se usi Claude Code in VS Code, puoi rinominare questo file in `CLAUDE.md`: viene letto automaticamente a ogni sessione.
+> Updated 30.10.2026 · version **0.6.0** from source (Windows installer last built at 0.4.0, portable ZIP at 0.4.1; executables are built only on request) · main file: `polyglot_pdf.py` (single file, ~4350 lines)
+> If you use Claude Code, you can rename this file to `CLAUDE.md`: it is then read automatically at every session.
 
-## 1. Obiettivo
-Tool desktop Python per leggere lo **stesso documento PDF in più lingue**:
-1. cambio lingua rapido **mantenendo il punto di lettura** ✅
-2. **evidenziazioni e note** fatte in una lingua visibili anche nelle altre ✅
-3. **generazione di una lingua mancante** con LLM locale, offline e gratuito, mantenendo layout e immagini ✅ *(provato con translategemma:4b reale)*
-4. **allineamento semantico** senza dipendenze Python in più (embedding da Ollama) e **OCR delle pagine scansionate** ✅
+## 1. Goal
+Python desktop tool to read the **same PDF document in several languages**:
+1. fast language switch **keeping the reading position** ✅
+2. **highlights and notes** made in one language visible in the others ✅
+3. **generation of a missing language** with a local, offline, free LLM, keeping layout and images ✅ *(tested with the real translategemma:4b)*
+4. **semantic alignment** without extra Python dependencies (embeddings from Ollama) and **OCR of scanned pages** ✅
+5. **interface in English or Italian** and **translation of the selected text** in a note-like popup ✅
 
-Caso d'uso principale: manuali tecnici già esistenti in più lingue (IT/DE/FR/EN). Analisi iniziale: nessun software gratuito copre tutto (PDFMathTranslate/BabelDOC traducono ma non sincronizzano; PdfSideViewer affianca due PDF ma senza note sincronizzate).
+Main use case: technical manuals that already exist in several languages (IT/DE/FR/EN). Initial survey: no free software covers everything (PDFMathTranslate/BabelDOC translate but do not synchronise; PdfSideViewer shows two PDFs side by side but without synchronised notes).
 
-## 2. Ambiente
-- **OS**: Windows. Cartella attuale: `C:\Temp\Claude workplace\Polygot PDF\` (prima: `C:\Temp\Python\Polyglot PDF\`)
-- **Hardware**: Intel i5-8265U (4 core / 8 thread), **8 GB RAM** (7,9 GB visibili a Windows, misurato il 26.10.2026; spesso < 1 GB liberi con browser e VS Code aperti → caricamento del modello 50–80 s), **nessuna GPU dedicata** (solo Intel UHD integrata) → LLM su CPU
-- **Dipendenze** (vedi `requirements.txt`): installate nell'ambiente virtuale **`.venv`** del progetto (PySide6 6.12, PyMuPDF 2.0, numpy 2.5).
-  Il Python del Microsoft Store installa i pacchetti in un percorso troppo lungo e PySide6 fallisce ("Long Path"): usare sempre `.venv`.
-  Dal 26.10.2026 `.venv` è basato sul Python 3.13 di python.org (`%LOCALAPPDATA%\Programs\Python\Python313`): quello del Microsoft Store era stato disinstallato e il vecchio `.venv` non partiva più. Se succede di nuovo: `<python> -m venv --clear .venv` e poi `pip install -r requirements.txt`.
+## 2. Environment
+- **OS**: Windows 11. Project folder: `C:\Temp\Claude workplace\Polygot PDF\`. Repository: https://github.com/metfidan-dev/Polyglot_PDF (public, AGPL-3.0).
+- **Hardware of the development PC**: HP Laptop 14-cf1xxx, Intel i5-8265U (4 cores / 8 threads), **8 GB RAM** (one 8 GB DDR4-2400 module, second slot free, max 32 GB; often < 1 GB free with browser and VS Code open → model loading 50–80 s), **no dedicated GPU** (Intel UHD 620 only) → LLM on the CPU, 128 GB SSD.
+- **Dependencies** (`requirements.txt`): installed in the project virtual environment **`.venv`** (PySide6 6.12, PyMuPDF 2.0, numpy 2.5), based on Python 3.13 from python.org (`%LOCALAPPDATA%\Programs\Python\Python313`). The Microsoft Store Python was uninstalled on 26.10.2026 and the old `.venv` stopped working; if it happens again: `<python> -m venv --clear .venv`, then `pip install -r requirements.txt`.
   ```bat
   .venv\Scripts\python -m pip install -r requirements.txt
-  .venv\Scripts\python -m pip install sentence-transformers   :: opzionale: allineamento semantico nel processo (altrimenti Ollama)
+  .venv\Scripts\python -m pip install sentence-transformers   :: optional: in-process semantic alignment (otherwise Ollama)
   ```
-  ⚠️ Il pacchetto si chiama `pymupdf`. **Non** installare il pacchetto `fitz` di PyPI, che è un'altra cosa. Da PyMuPDF 2.0 `import fitz` è deprecato: il codice usa `import pymupdf as fitz` (con ripiego su `fitz` per versioni vecchie).
-  ⚠️ PySide6 contiene percorsi molto lunghi: in un venv dentro cartelle profonde l'installazione fallisce senza il supporto Windows "Long Paths".
-- **Passo 3**: [Ollama](https://ollama.com) installato e avviato, poi `ollama pull translategemma:4b`. Indirizzo: `http://localhost:11434` (o variabile `OLLAMA_HOST`).
-- **Passo 4**: `ollama pull paraphrase-multilingual` (563 MB) per l'allineamento semantico. Dati OCR Tesseract (`ita/deu/fra/eng.traineddata`, 14–22 MB l'uno) in `~/.cache/polyglot_pdf/tessdata`: già scaricati; per altre lingue l'app chiede e li scarica da github.com/tesseract-ocr/tessdata. Tesseract **non** va installato: è dentro PyMuPDF.
-- **Avvio**: `.venv\Scripts\python polyglot_pdf.py [progetto.polypdf.json | a_it.pdf b_de.pdf ...]`
-- **Installer Windows** (versione da `APP_VERSION` in `polyglot_pdf.py`):
-  `powershell -ExecutionPolicy Bypass -File packaging\build.ps1` → `packaging\output\PolyglotPDF-Setup-<versione>.exe` (~54 MB).
-  PyInstaller (cartella `packaging\dist\PolyglotPDF`, ~220 MB, anche portabile) + Inno Setup 6 (installato con `winget install -e --id JRSoftware.InnoSetup --scope user`).
-  Installazione per utente in `%LOCALAPPDATA%\Programs\PolyglotPDF`, senza diritti di amministratore; menu Start, icona desktop opzionale, disinstallazione da "App installate".
-  Non include `sentence-transformers` (allineamento semantico via Ollama se c'è il modello, altrimenti euristico) né Ollama, che va installato a parte. L'OCR funziona anche nell'.exe (verificato). L'eseguibile non è firmato: al primo avvio Windows SmartScreen può chiedere conferma ("Ulteriori informazioni" → "Esegui comunque").
-- **Versione portabile**: `powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Portable` → `packaging\output\PolyglotPDF-<versione>-portable.zip` (~104 MB, niente Inno Setup). Contiene `PolyglotPDF.exe`, `_internal\`, `portable.txt` e `dati\tessdata` (ita/deu/fra/eng). Con `portable.txt` accanto all'.exe, `_data_dir()` mette cache/OCR/allineamenti in `.\dati` (verificato: 0 file nel profilo utente). Ollama resta da installare a parte.
-- **Avvio da sorgente**: `avvia.bat` (usa sempre `.venv`, anche con doppio clic). Con il Python di sistema compare un messaggio che spiega come avviare.
-- `pymupdf.layout` (modello ONNX che PyMuPDF 2.x carica a ogni import, ~2 s) è disattivato in testa al file: estrazione del testo verificata identica.
-- **Cache**: `~/.cache/polyglot_pdf/` (embeddings `emb_<text_key>_<modello>.npy`, allineamenti `align_<tkA>_<tkB>_<metodo>_v1.json` con metodo `semantico` / `semantico-ollama` / `euristico`, traduzioni `tr_<hash>_<src>_<tgt>_<modello>_v1.json`, anteprime `anteprima_*.pdf`, OCR `ocr_<hash>_<lingue>_v1.json` (+ `.progress`), `ocr_errore.txt`, dati `tessdata/`)
-- `text_key` = hash del file + `o` se il testo delle pagine scansionate viene dall'OCR: identifica la suddivisione in blocchi (cache di embedding/allineamento, ancore delle annotazioni).
+  ⚠️ The package is called `pymupdf`. Do **not** install the `fitz` package from PyPI, which is something else. Since PyMuPDF 2.0 `import fitz` is deprecated: the code uses `import pymupdf as fitz` (falling back to `fitz` for old versions).
+  ⚠️ PySide6 contains very long paths: in a venv inside deep folders the installation fails without Windows "Long Paths" support (the Microsoft Store Python had this problem).
+- **Ollama** ([ollama.com](https://ollama.com)) installed and running: `ollama pull translategemma:4b` (translation) and `ollama pull paraphrase-multilingual` (563 MB, semantic alignment). Address `http://127.0.0.1:11434` (or the `OLLAMA_HOST` variable; `localhost` and `0.0.0.0` are converted to 127.0.0.1, see 0.5.1).
+- **OCR**: Tesseract is **not** installed separately, it is built into PyMuPDF. Language data (`ita/deu/fra/eng.traineddata`, 14–22 MB each) in `~/.cache/polyglot_pdf/tessdata`; for other languages the app asks and downloads them from github.com/tesseract-ocr/tessdata.
+- **Start from source**: `avvia.bat` (always uses `.venv`, also with a double click) or `.venv\Scripts\python polyglot_pdf.py [project.polypdf.json | a_it.pdf b_de.pdf ...]`. With the system Python a message explains how to start.
+- **Windows installer** (version from `APP_VERSION`): `powershell -ExecutionPolicy Bypass -File packaging\build.ps1` → `packaging\output\PolyglotPDF-Setup-<version>.exe` (~54 MB). PyInstaller (`packaging\dist\PolyglotPDF`, ~220 MB) + Inno Setup 6 (`winget install -e --id JRSoftware.InnoSetup --scope user`). Per-user installation in `%LOCALAPPDATA%\Programs\PolyglotPDF`, no administrator rights; Start menu, optional desktop icon, uninstall from "Installed apps". It does not include `sentence-transformers` nor Ollama. The executable is not signed: Windows SmartScreen may ask for confirmation at the first start ("More info" → "Run anyway").
+- **Portable version**: `... packaging\build.ps1 -Portable` → `packaging\output\PolyglotPDF-<version>-portable.zip` (~104 MB, no Inno Setup). Contains `PolyglotPDF.exe`, `_internal\`, `portable.txt` and `dati\tessdata` (ita/deu/fra/eng). With `portable.txt` next to the .exe, `_data_dir()` puts cache/OCR/alignments/settings into `.\dati` (verified: 0 files in the user profile).
+- `pymupdf.layout` (ONNX model that PyMuPDF 2.x loads at every import, ~2 s) is disabled at the top of the file: text extraction verified identical.
+- **Data folder** `~/.cache/polyglot_pdf/` (or `.\dati` in the portable version): embeddings `emb_<text_key>_<model>.npy`, alignments `align_<tkA>_<tkB>_<method>_v1.json` (method `semantico` / `semantico-ollama` / `euristico`: internal keys, kept in Italian for cache compatibility), translations `tr_<hash>_<src>_<tgt>_<model>_v1.json`, previews `anteprima_*.pdf`, OCR `ocr_<hash>_<langs>_v1.json` (+ `.progress`), `ocr_errore.txt`, `tessdata/`, **`settings.json`** (`{"ui_lang": "en" | "it"}`).
+- `text_key` = file hash + `o` if the text of scanned pages comes from OCR: identifies the block structure (embedding/alignment caches, annotation anchors).
 
-## 3. Architettura (`polyglot_pdf.py`)
-| Sezione | Contenuto |
+## 3. Architecture (`polyglot_pdf.py`)
+| Section | Content |
 |---|---|
-| `Block`, `extract_blocks()` | Blocchi di testo per pagina con le parole (`get_text("words")` + `"blocks"`, stessa `textpage`, oppure i dati OCR in cache). Almeno un blocco per pagina (blocco fittizio per pagine senza testo). |
-| OCR | `scanned_pages()` (pagine senza testo con un'immagine > 30 % della pagina), `load_ocr()` (usa solo cache **complete**), `ocr_main()` = **processo separato** `polyglot_pdf.py --ocr <pdf> <hash> <lingue> <pagine>` (PyMuPDF non regge più thread; da .exe: `PolyglotPDF.exe --ocr …`), `get_textpage_ocr(dpi=300, full=True)`, salvataggio parziale ogni 5 s → ripresa. Errori del processo in `ocr_errore.txt` (l'.exe non ha console). |
-| `Document` | PDF + lingua + hash SHA1 + `text_key`, `ocr_pages`, `pending_ocr`. **Posizione continua** = `indice_blocco + frazione`. Indice globale delle parole `wg`. Metodi: `pos_from_point`, `point_from_pos`, `word_at`, `word_pos`, `words_in_pos_range`, `rects_for_words` (unione per riga), `text_for_words`. |
-| Allineamento | `align_blocks()` → ancore `(i, j, sim)`: miglior match reciproco in una banda attorno alla diagonale, poi sottosequenza crescente più lunga (`_longest_increasing`). Similarità **semantica** (`_rows_embedding`; `get_embedding_model()`: `_STEmbedder` con `paraphrase-multilingual-MiniLM-L12-v2` se c'è sentence-transformers, altrimenti `OllamaEmbedder` con `paraphrase-multilingual` via `/api/embed`, ricontrollato a ogni allineamento; se Ollama cade a metà → euristico) o **euristica** (`_rows_heuristic`: token invarianti tra lingue — numeri, sigle, codici — pesati IDF + rapporto lunghezze). `build_mapping()` → funzione monotona a tratti `posA → posB`. |
-| `block_word_matches()`, `intra_block_map()` | Allineamento **fine dentro un paragrafo**. Corrispondenze parola→parola: token invarianti, punteggiatura (`:` `;` parentesi, se in numero uguale) e **parole affini** (`_fold` senza accenti + `difflib` ≥ 0,72, stessa iniziale, migliore reciproca: Sensor/sensore, Intelligentes/intelligente). La mappa monotona usa quelle in ordine (`_longest_increasing`). `MainWindow._paired_block` / `_intra` (cache per `text_key`) / `map_pos_fine`; `_direct_words`: evidenziazioni ≤ 8 parole prese direttamente dalle corrispondenze, anche con ordine invertito («Intelligentes Design» → «design intelligente»). |
-| `AlignWorker(QThread)` | Calcola gli allineamenti di tutte le coppie di lingue in background, con cache. |
-| `HighlightItem`, `NoteIconItem` | Elementi grafici delle annotazioni (evidenziazione in modalità *Multiply*; tratteggio = posizione stimata). |
-| `PdfView(QGraphicsView)` | Scorrimento continuo, rendering pigro delle pagine (±1 pagina, scarta oltre ±2), zoom, selezione del testo col mouse, pan con la rotella centrale. Segnali: `selectionMade`, `annotationClicked`, `annotationActivated`, `contextRequested`, `pageClicked`. |
-| Ollama | `ollama_models()` (`/api/tags`), `ollama_generate()` (`/api/generate` in **streaming**, interrompibile fra un token e l'altro), `translation_prompt()` (prompt TranslateGemma + regola su numeri/codici + voci di glossario **presenti nel testo**), `ollama_translate()` (paragrafi > 1500 caratteri spezzati per frase). Solo `urllib`. |
-| Unità di traduzione | `doc_units(doc)` → `(chiave, blocco, rettangolo, parole)`. Chiave `"i"` = blocco intero; `"i.k"` = cella k quando PyMuPDF ha unito più **celle di tabella** in un blocco (`block_cells`: spazi orizzontali > 2× altezza riga). `source_text()` ricongiunge le parole spezzate a fine riga (non "Ein- und"). `needs_translation()` esclude blocchi di soli numeri/sigle. |
-| `TranslationCache`, `TranslateWorker(QThread)` | Cache per unità (verificata sul testo sorgente), salvata ogni 15 s e alla fine → **ripresa**. `rate()` = secondi/carattere misurati → stima del tempo. `missing_tokens()` segnala numeri/sigle persi (ignora parole maiuscole lunghe come ATTENZIONE). |
-| `render_translated_pdf()` | Per ogni unità: stile prevalente (`_block_style`: dimensione, colore, grassetto/corsivo, serif, interlinea, allineamento sinistra/giustificato/centrato rispetto alla colonna), riquadro allargato verso lo spazio libero (`_free_box`: si ferma a testo, immagini, linee/bordi di `get_drawings()`), redazione delle **righe** (fill=False, immagini e grafica intatte; pagine **OCR**: riquadro coperto col colore della carta, `_background`, dimensione del carattere da `_ocr_font_size`, la scansione non è un ostacolo), `insert_htmlbox` con prima riga allineata all'originale (misura su pagina di prova). |
-| `exact_anchors()` | Ancore esatte sorgente → PDF generato dai riquadri del `.polymap.json`. Inserite in `mappings` da `_add_exact_mappings()` al posto del calcolo stimato. |
-| `OllamaProbe`, `SelectionTranslateWorker`, `TranslationPopup` | 0.5.0: controllo di Ollama in un thread (ogni 10 s, `MainWindow.check_ollama` → `_show_tr_status`); traduzione al volo della selezione (`ollama_translate(..., on_partial)` con `ollama_generate(on_token)` in streaming); riquadro giallo **figlio del viewport** di `PdfView`, riposizionato da `place_popup` (scorrimento, zoom, resize; sotto la selezione o sopra se manca spazio) e chiuso da `clear_selection`. Cache in memoria per sessione `(testo, src, tgt, modello)`. |
-| `GenerateDialog`, `TranslationEditDialog` | Dialogo "Genera lingua" (sorgente, destinazione, modello, prova su N pagine, file, glossario per coppia, stato di Ollama e della cache); modifica di un paragrafo (originale + traduzione). |
-| `MainWindow` | Progetto, barra delle lingue, cambio lingua, pannello annotazioni (dock), annulla, export, salvataggio. Passo 3: `_start_generation` → `_after_test` (stima) / `_finish_generation` → `_write_generated` (PDF + `.polymap.json` + ricarica, chiude il PDF prima di sostituirlo) → `_reanchor` (annotazioni seguono le parole dopo una rigenerazione **o un cambio di `text_key`**, anche all'apertura del progetto). Passo 4: `_start_ocr` (automatico dopo apertura/aggiunta; chiede di scaricare i dati di lingua mancanti) → `QProcess` + `_ocr_poll` (avanzamento dal file `.progress`) → `_ocr_finished` → `_reload_text` (ricarica, posizione mantenuta, riaggancio, nuovo allineamento, salvataggio). `stop_ocr`, `ocr_current`. |
+| Interface language | `UI_LANG` (`en`/`it`), `_t(text)` → `IT_TEXTS[text]` in Italian, otherwise the English text itself. **English is the source language**; the Italian translations are in `IT_TEXTS` at the end of the file, with the same `{placeholders}` (texts with values use `_t("… {name} …").format(name=…)`, not f-strings). `default_ui_lang()`: saved choice in `settings.json`, otherwise the Windows language (`QLocale`: Italian → `it`, otherwise `en`); set in `main()` before the window is created. `lang_display()` = document language names in the interface language. Menu *Help → Language / Lingua* (`MainWindow.set_ui_lang`): saves the choice, effective at the next start. |
+| `Block`, `extract_blocks()` | Text blocks per page with their words (`get_text("words")` + `"blocks"` on the same `textpage`, or the cached OCR data). At least one block per page (placeholder block for pages without text). |
+| OCR | `scanned_pages()` (pages without text with an image > 30 % of the page), `load_ocr()` (uses only **complete** caches), `ocr_main()` = **separate process** `polyglot_pdf.py --ocr <pdf> <hash> <langs> <pages>` (PyMuPDF does not support several threads; from the .exe: `PolyglotPDF.exe --ocr …`), `get_textpage_ocr(dpi=300, full=True)`, partial save every 5 s → resume. Process errors in `ocr_errore.txt` (the .exe has no console). |
+| `Document` | PDF + language + SHA1 hash + `text_key`, `ocr_pages`, `pending_ocr`. **Continuous position** = `block_index + fraction`. Global word index `wg`. Methods: `pos_from_point`, `point_from_pos`, `word_at`, `word_pos`, `words_in_pos_range`, `rects_for_words` (merged per line), `text_for_words`. |
+| Alignment | `align_blocks()` → anchors `(i, j, sim)`: best mutual match in a band around the diagonal, then longest increasing subsequence (`_longest_increasing`). **Semantic** similarity (`_rows_embedding`; `get_embedding_model()`: `_STEmbedder` with `paraphrase-multilingual-MiniLM-L12-v2` if sentence-transformers is installed, otherwise `OllamaEmbedder` with `paraphrase-multilingual` via `/api/embed`, checked again at every alignment; if Ollama fails half-way → heuristic) or **heuristic** (`_rows_heuristic`: language-invariant tokens — numbers, acronyms, codes — IDF-weighted + length ratio). `build_mapping()` → piecewise monotonic function `posA → posB`. |
+| `block_word_matches()`, `intra_block_map()` | **Fine alignment inside a paragraph**. Word→word correspondences: invariant tokens, punctuation (`:` `;` brackets, if equal in number) and **cognates** (`_fold` without accents + `difflib` ≥ 0.72, same initial, best mutual: Sensor/sensore, Intelligentes/intelligente). The monotonic map uses those in order. `MainWindow._paired_block` / `_intra` (cache per `text_key`) / `map_pos_fine`; `_direct_words`: highlights ≤ 8 words taken directly from the correspondences, also in reversed order («Intelligentes Design» → «design intelligente»). |
+| `AlignWorker(QThread)` | Computes the alignments of all language pairs in the background, with cache. |
+| `HighlightItem`, `NoteIconItem` | Graphic items of the annotations (highlight in *Multiply* mode; dashed line = estimated position). |
+| `PdfView(QGraphicsView)` | Continuous scrolling, lazy page rendering (±1 page, dropped beyond ±2), zoom, mouse text selection, panning with the middle button. Signals: `selectionMade`, `annotationClicked`, `annotationActivated`, `contextRequested`, `pageClicked`. |
+| Ollama | `ollama_base()` (127.0.0.1), `ollama_models()` (`/api/tags`), `ollama_loaded()` (`/api/ps`), `ollama_preload()`, `ollama_generate()` (`/api/generate` **streaming**, interruptible between tokens, `on_token`), `translation_prompt()` (TranslateGemma prompt + rule on numbers/codes + glossary entries **present in the text**), `ollama_translate()` (paragraphs > 1500 characters split by sentence, `on_partial`). `OLLAMA_OPTIONS` = same options everywhere (a different `num_ctx` would reload the model). Only `urllib`. |
+| Translation units | `doc_units(doc)` → `(key, block, rectangle, words)`. Key `"i"` = whole block; `"i.k"` = cell k when PyMuPDF merged several **table cells** into a block (`block_cells`: horizontal gaps > 2× line height). `source_text()` joins words hyphenated at the end of a line (not "Ein- und"). `needs_translation()` excludes blocks made only of numbers/acronyms. |
+| `TranslationCache`, `TranslateWorker(QThread)` | Cache per unit (checked against the source text), saved every 15 s and at the end → **resume**. `rate()` = measured seconds/character → time estimate. `missing_tokens()` flags lost numbers/acronyms (ignores long upper-case words like ATTENZIONE). |
+| `render_translated_pdf()` | For each unit: prevailing style (`_block_style`: size, colour, bold/italic, serif, line spacing, left/justified/centred alignment relative to the column), box widened towards the free space (`_free_box`: stops at text, images, lines/borders from `get_drawings()`), redaction of the **lines** (fill=False, images and graphics untouched; **OCR** pages: box covered with the paper colour, `_background`, font size from `_ocr_font_size`, the scan is not an obstacle), `insert_htmlbox` with the first line aligned to the original (measured on a scratch page). |
+| `exact_anchors()` | Exact source → generated PDF anchors from the boxes of the `.polymap.json`. Put into `mappings` by `_add_exact_mappings()` instead of the estimated computation. |
+| `OllamaProbe`, `ModelPreloader`, `SelectionTranslateWorker`, `TranslationPopup` | Ollama check in a thread (every 10 s, `MainWindow.check_ollama` → `_show_tr_status`); model preloading when the selection menu appears; on-the-fly translation of the selection, shown while it streams; yellow box **child of the viewport** of `PdfView`, repositioned by `place_popup` (scrolling, zoom, resize; below the selection or above if there is no room) and closed by `clear_selection`. In-memory cache per session `(text, src, tgt, model)`. |
+| `GenerateDialog`, `TranslationEditDialog` | "Generate language" dialog (source, target, model, test on N pages, file, glossary per pair, Ollama and cache status); editing of a paragraph (original + translation). |
+| `MainWindow` | Project, language bar, language switch, annotation panel (dock), undo, export, saving. Generation: `_start_generation` → `_after_test` (estimate) / `_finish_generation` → `_write_generated` (PDF + `.polymap.json` + reload, closes the PDF before replacing it) → `_reanchor` (annotations follow the words after a regeneration **or a `text_key` change**, also when opening the project). OCR: `_start_ocr` (automatic after opening/adding; asks to download missing language data) → `QProcess` + `_ocr_poll` (progress from the `.progress` file) → `_ocr_finished` → `_reload_text` (reload, position kept, re-anchoring, new alignment, saving). `stop_ocr`, `ocr_current`. |
 
-### Cambio lingua
-`get_position()` (punto di lettura a 1/3 dell'altezza della finestra) → `pos_from_point` → `map_pos` → `point_from_pos` → `set_position` nella vista di destinazione. Ogni lingua ha la propria `PdfView` in un `QStackedWidget`, quindi il cambio è istantaneo. Prima che l'allineamento sia pronto si usa una mappatura proporzionale.
+### Language switch
+`get_position()` (reading position at 1/3 of the window height) → `pos_from_point` → `map_pos` → `point_from_pos` → `set_position` in the target view. Every language has its own `PdfView` in a `QStackedWidget`, so the switch is instant. Before the alignment is ready a proportional mapping is used.
 
-### Annotazioni
-- Ogni annotazione ha un'**ancora sorgente** esatta (`src`) nella lingua in cui è stata creata, più eventuali **override manuali** per lingua.
-- Nelle altre lingue la posizione è **calcolata al volo** (`_ann_render`) tramite `map_pos_fine`. Se l'allineamento migliora, le annotazioni si aggiornano da sole.
-- Ancora valida solo se `hash` corrisponde al PDF caricato. Campo `tk` (= `text_key` alla creazione; assente = hash): se diverso, la posizione viene ricalcolata dai rettangoli/punto.
+### Annotations
+- Every annotation has an exact **source anchor** (`src`) in the language where it was created, plus optional **manual overrides** per language.
+- In the other languages the position is **computed on the fly** (`_ann_render`) through `map_pos_fine`. If the alignment improves, the annotations update themselves.
+- An anchor is valid only if `hash` matches the loaded PDF. Field `tk` (= `text_key` at creation; missing = hash): if different, the position is recomputed from the rectangles/point.
 
-## 4. Formato progetto `.polypdf.json` (version 2)
+## 4. Project format `.polypdf.json` (version 2)
 ```json
 {
   "app": "PolyglotPDF", "version": 2,
@@ -74,19 +69,20 @@ Caso d'uso principale: manuali tecnici già esistenti in più lingue (IT/DE/FR/E
   "state": {"lang": "it", "page": 3, "y": 120.5, "zoom": 1.2},
   "annotations": [{
     "id": "a1b2c3d4e5f6", "kind": "highlight | note", "color": "#FFD400",
-    "note": "testo", "created": "2026-10-19T16:40:00",
-    "src": {"lang": "it", "hash": "…", "pos": [p0, p1],
-            "rects": [[pagina, x0, y0, x1, y1]], "text": "…"},
-    "overrides": {"de": {"…stessa struttura…"}}
-  }]
+    "note": "text", "created": "2026-10-19T16:40:00",
+    "src": {"lang": "it", "hash": "…", "tk": "…", "pos": [p0, p1],
+            "rects": [[page, x0, y0, x1, y1]], "text": "…"},
+    "overrides": {"de": {"…same structure…"}}
+  }],
+  "glossaries": {"it>de": "sezionatore = Trennschalter\n…"}
 }
 ```
-- Percorsi relativi alla cartella del progetto.
-- Note a punto: l'ancora ha `"point": [pagina, x, y]` al posto di `rects`/`text`.
-- Salvataggio atomico (`.tmp` + `os.replace`). Dopo il primo salvataggio, salvataggio automatico a ogni modifica.
-- Chiave opzionale `"glossaries": {"it>de": "sezionatore = Trennschalter\n…"}` (una voce per riga, anche `->`, `→` o tab; `#` = commento). Retrocompatibile: resta `version: 2`.
+- Paths relative to the project folder.
+- Point notes: the anchor has `"point": [page, x, y]` instead of `rects`/`text`.
+- Atomic saving (`.tmp` + `os.replace`). After the first save, automatic saving at every change.
+- `glossaries` (optional): one entry per line, also `->`, `→` or tab; `#` = comment.
 
-### File di corrispondenza `<nome>.polymap.json` (accanto al PDF generato)
+### Mapping file `<name>.polymap.json` (next to the generated PDF)
 ```json
 {
   "app": "PolyglotPDF", "kind": "generated", "version": 1,
@@ -96,109 +92,91 @@ Caso d'uso principale: manuali tecnici già esistenti in più lingue (IT/DE/FR/E
                "src": "Valore", "text": "Wert", "edited": false, "warn": []}]
 }
 ```
-- Una voce per unità di testo della sorgente; `text: null` = lasciato com'era (numeri di pagina, valori).
-- `box` = riquadro in cui è stata scritta la traduzione → mappatura esatta e clic sul paragrafo.
-- Valido solo se `out_hash` coincide con il PDF caricato (PDF modificato altrove → trattato come PDF normale).
-- `edited: true` = correzione manuale: **conservata** anche rigenerando tutta la lingua.
+- One entry per text unit of the source; `text: null` = left as it was (page numbers, values).
+- `box` = box where the translation was written → exact mapping and click on the paragraph.
+- Valid only if `out_hash` matches the loaded PDF (PDF modified elsewhere → treated as a normal PDF).
+- `edited: true` = manual correction: **kept** even when regenerating the whole language.
 
-## 5. Funzioni utente (comandi)
-- **Lingue**: `Ctrl+1…9`, `Ctrl+Tab` / `Ctrl+Shift+Tab`. Il paragrafo corrispondente lampeggia (disattivabile in Vista).
-- **Navigazione**: `Ctrl+rotella` zoom, `Ctrl+0` adatta larghezza, `Ctrl+G` vai a pagina, rotella centrale per trascinare.
-- **Annotazioni**: trascina per selezionare → menu (5 colori, con nota, copia). `H` evidenzia, `N` evidenzia con nota, `Alt+1…5` colore, `Ctrl+Shift+H` modalità evidenziatore, `Ctrl+Shift+N` nota a punto, doppio clic modifica, tasto destro: colore / elimina / **Correggi posizione in XX** / Ripristina automatica. `Ctrl+Z` annulla (50 passi), `Esc` annulla la modalità.
-- **File**: `Ctrl+L` aggiungi PDF/lingua (lingua proposta da nome file o contenuto), drag & drop, `Ctrl+E` **esporta PDF annotati** (`<nome>_annotato.pdf` con annotazioni PDF standard), Ricalcola allineamento.
-- **OCR**: automatico in background all'apertura di un PDF con pagine scansionate (barra di stato: «OCR IT: pagina 3/40» + *Interrompi OCR*); al termine il testo è selezionabile e annotabile. Menu *Allineamento → Riconosci testo nelle pagine scansionate (OCR)* per riprendere dopo un'interruzione o un rifiuto.
-- **Versione**: nel titolo della finestra, in basso a destra nella barra di stato (`v0.5.0`) e in *? → Informazioni su PolyglotPDF…* (anche stato di Ollama, cartella dati, versioni di Python/PyMuPDF/Qt).
-- **Stato della traduzione** (barra di stato): **● Traduzione disponibile** in verde (Ollama attivo con un modello `translategemma`), **● Traduzione non disponibile** in rosso (Ollama non rilevato, oppure attivo senza modello: il tooltip dice cosa fare). Ricontrollo automatico ogni 10 s, clic per ricontrollare subito.
-- **Traduci selezione**: seleziona il testo → menu (anche tasto destro) **Traduci in italiano (IT)** o **Traduci in ▸** altra lingua, oppure tasto `T`. Riquadro stile nota ancorato alla selezione: la traduzione compare mentre arriva, lingua cambiabile dal riquadro (ricordata per la sessione), *Copia*, *Salva come nota* (evidenziazione con nota «[IT] …»). Si chiude con ✕, `Esc`, una nuova selezione o un clic altrove; chiudendo a metà la traduzione si interrompe. Voci disattivate se la traduzione non è disponibile. Usa il glossario della coppia di lingue.
-- **Traduzione**: `Ctrl+Shift+G` **Genera lingua mancante…** → (consigliata) prova su 2–3 pagine → messaggio con tempo stimato: *Traduci tutto* / *Apri anteprima* / *Chiudi*. Avanzamento e tempo rimanente nella barra di stato, pulsante *Interrompi* (si riprende rilanciando). Alla fine il PDF `manuale_de.pdf` viene aggiunto al progetto come nuova lingua. *Paragrafi da rivedere…* (numeri/sigle persi), *Rigenera PDF della lingua corrente*. Tasto destro su un paragrafo della lingua generata: **Modifica traduzione del paragrafo…** / **Ritraduci paragrafo** → PDF rigenerato, posizione di lettura mantenuta.
+## 5. User functions (English menu names; Italian in brackets)
+- **Languages**: `Ctrl+1…9`, `Ctrl+Tab` / `Ctrl+Shift+Tab`. The matching paragraph flashes (can be disabled in View).
+- **Navigation**: `Ctrl+wheel` zoom, `Ctrl+0` fit width, `Ctrl+G` go to page, middle button to drag.
+- **Annotations**: drag to select → menu (5 colours, with note, copy, translate). `H` highlight, `N` highlight with note, `Alt+1…5` colour, `Ctrl+Shift+H` highlighter mode, `Ctrl+Shift+N` point note, double click to edit, right click: colour / delete / **Fix position in XX** / restore automatic position. `Ctrl+Z` undo (50 steps), `Esc` cancels the mode.
+- **File**: `Ctrl+L` add PDF/language (language suggested from the file name or the content), drag & drop, `Ctrl+E` **export annotated PDFs** (`<name>_annotated.pdf`, Italian UI `_annotato.pdf`, with standard PDF annotations), recompute alignment.
+- **OCR**: automatic in the background when a PDF with scanned pages is opened (status bar «OCR IT: page 3/40» + *Stop OCR*); afterwards the text can be selected and annotated. Menu *Alignment → Recognise text in scanned pages (OCR)* to resume after an interruption or a refusal.
+- **Version**: in the window title, at the bottom right of the status bar (`v0.6.0`) and in *Help → About PolyglotPDF…* (also Ollama status, data folder, Python/PyMuPDF/Qt versions).
+- **Interface language**: *Help → Language / Lingua* → English / Italiano (effective at the next start). Default: the Windows language.
+- **Translation status** (status bar): **● Translation available** in green (Ollama running with a `translategemma` model), **● Translation not available** in red (Ollama not detected, or running without the model: the tooltip says what to do). Automatic check every 10 s, click to check at once.
+- **Translate selection**: select text → menu (also right click) **Translate into Italian (IT)** or **Translate into ▸** another language, or key `T`. Note-like box anchored to the selection: the translation appears while it arrives, the language can be changed in the box (remembered for the session), *Copy*, *Save as note* (highlight with note «[IT] …»). It closes with ✕, `Esc`, a new selection or a click elsewhere; closing it half-way stops the translation. Items disabled if translation is not available. Uses the glossary of the language pair. The model is preloaded as soon as the selection menu appears.
+- **Generate missing language** (`Ctrl+Shift+G`) → (recommended) test on 2–3 pages → message with estimated time: *Translate everything* / *Open preview* / *Close*. Progress and remaining time in the status bar, *Stop* button (resumes when restarted). At the end the PDF `manual_de.pdf` is added to the project as a new language. *Paragraphs to review…* (lost numbers/acronyms), *Regenerate PDF of the current language*. Right click on a paragraph of the generated language: **Edit paragraph translation…** / **Translate paragraph again** → PDF regenerated, reading position kept.
 
-## 6. Test eseguiti (PDF sintetici IT 10 pag. / DE 12 pag.)
-- Allineamento euristico: 120/120 paragrafi corretti. Senza numerazione e con 5 paragrafi mancanti: 115/115.
-- Cambio IT→DE→IT: posizione mantenuta (es. IT pag. 7 ↔ DE pag. 8, stesso paragrafo).
-- Evidenziazione IT «centrale 40 con protocollo IEC 61850.» → DE stimata «40 mit dem Protokoll IEC 61850.» (la correzione manuale funziona).
-- Selezione col mouse (QTest), annulla, export PDF (Highlight + Text annot), salva e riapri: OK.
-- ⚠️ **Non ancora testato su manuali reali** (tabelle, due colonne, figure).
+## 6. Version history and tests
+Tests run offscreen (`QT_QPA_PLATFORM=offscreen`) with real Ollama and OCR unless stated otherwise. **The test scripts are not in the repository**: they lived in the session scratchpad and part of them was lost in a temp-folder cleanup (October 2026). If needed: ask to recreate them in `tests/`. In offscreen tests every modal dialog (`QMessageBox.question/about/information/warning`) must be replaced, otherwise the test hangs (e.g. «Save the project?» when closing the window).
 
-**Passo 3** — test automatici (offscreen) con **finto server Ollama** (dizionario IT→DE, streaming, testo più lungo, un codice "perso" apposta), PDF sintetico di 4 pagine con titolo centrato, paragrafi giustificati, parola spezzata, riquadro colorato, immagine, tabella con linee: **98/98 controlli OK**.
-- Prompt nel formato TranslateGemma; glossario inserito solo se il termine compare.
-- Prova su 2 pagine + stima; interruzione a metà e ripresa: ritradotte **solo** le unità mancanti.
-- PDF generato: testo originale rimosso, immagine e grafica conservate, numero di pagina invariato, nessuna sovrapposizione, titolo centrato/grassetto/stessa dimensione, **prima riga alla stessa altezza** (69,5 ↔ 69,5 pt), corpo non rimpicciolito, colore e confini del riquadro rispettati, **ogni cella della tabella nella sua colonna**.
-- Allineamento esatto 40/40 ancore; evidenziazione IT ritrovata sul testo DE; cambio lingua sulla pagina giusta.
-- Modifica e ritraduzione di un paragrafo, annotazione fatta in DE riagganciata dopo la rigenerazione, correzioni manuali conservate, salva/riapri, messaggio chiaro con Ollama spento o modello mancante.
-- I test stanno nella scratchpad della sessione (non nel progetto). Se servono in futuro: chiedere di ricrearli in `tests/`.
+**0.6.0** (29.10.2026) — everything in English for a wider audience:
+- Interface bilingual EN/IT (English source texts, `IT_TEXTS` with 214 entries), README in English (`README.md`) with an Italian version (`README.it.md`), comments, docstrings and these notes in English.
+- Verification: compared with 0.5.1 the **program structure (AST) is identical** apart from the planned additions (texts, comments and docstrings normalised away; only differences: `QLocale` import, language functions, *Language* menu, `set_ui_lang`, `lang_display()` in the *Translate into* menu, `_annotated` suffix, `IT_TEXTS`, choice of the language in `main()`). All `_t()` texts have a translation with the same placeholders.
+- New test of the English interface (171 texts checked for leftover Italian, language menu and saved choice, Italian interface unchanged) + all previous tests.
+- Fix: the "Generate missing language" dialog wrote «1 pages» / «1 pagine» for one-page documents.
+- **Screenshots** for the READMEs in `docs/screenshots/en` and `docs/screenshots/it` (4 each, 580 KB in total): fictional demo manual «AquaFlow P-200» in IT/DE/EN generated with PyMuPDF (never use third-party PDFs: the repository is public), captured from the real app with Ollama through `QWidget.grab()` with `Qt.WA_DontShowOnScreen` (native Windows 11 style, nothing appears on screen; the `offscreen` platform has no fonts unless `QT_QPA_FONTDIR=C:/Windows/Fonts` and does not use the native style). The path in the generate dialog is replaced by a neutral `C:\Manuals\…` (the real one contains the Windows user name).
 
-**Passo 4** (22.10.2026) — test offscreen con Ollama e OCR reali, PDF IT di 6 pagine (pag. 2–3 scansionate) + DE nativo impaginato diversamente, con un paragrafo mancante e **senza numeri/sigle**: **24/24**; interruzione/ripresa/errore OCR: **10/10**; test del passo 3 e dei dialoghi: tutto OK.
-- Euristico: 0 ancore su questi testi; **semantico via Ollama: 23/23 paragrafi corretti** (similarità traduzioni 0,88–0,96, non correlati ≤ 0,46; ~11 paragrafi/s su CPU, primo caricamento del modello ~15 s).
-- OCR: ~1,8 s/pagina (300 dpi), testo esatto; evidenziazione su una pagina successiva riagganciata sulle stesse parole, nota sulla pagina scansionata, salva/riapri senza ripetere l'OCR.
-- Generazione da sorgente scansionata: testo originale coperto (l'OCR della pagina generata non lo trova più), immagine conservata, carattere 12–13 pt per un originale da 12.
-- `.exe` impacchettato: `--ocr` funziona senza console; aprendo un progetto l'OCR parte da solo e le annotazioni vengono salvate con il nuovo `tk`.
+**0.5.1** (26.10.2026) — translation speed:
+- `ollama_base()` uses **127.0.0.1** (also instead of `localhost`/`0.0.0.0` in `OLLAMA_HOST`): with «localhost» Windows tries IPv6 first and every request lost ~2 s (measured 2–3 s → 0.03 s). Applies everywhere: selection translation, language generation, embeddings, status check.
+- **Model preloading** when the selection menu appears (`preload_model` → `ModelPreloader`: `/api/ps`, then `/api/generate` without prompt with the **same** `OLLAMA_OPTIONS`). The box says «Loading the model into memory…» if the model is not ready (`ollama_loaded`).
+- Measurements (single word, DE→IT): model in memory 6.9 s → 5.3–5.5 s (Ollama directly); ~4.7 s are the reading of the ~100 prompt tokens. Model to be loaded: 50–80 s with little free RAM; preloading hides the part spent choosing from the menu (81 s → 44 s from the click, after 8 s of menu).
+- Not applied (user's choice): shorter instructions for selections without numbers/codes (51 tokens instead of 99, ~1–2 s less).
 
-**0.4.1** (22.10.2026) — segnalazione: «l'allineamento sembra peggiorato» (scheda Turbimax CUS52D DE/IT in `test1\`).
-- Causa: il paragrafo era giusto, la **parola** no (stima proporzionale) + bug in `Document._pos_to_word` (arrotondamento: 7 + 3/18 → una parola in più ai lati di ogni evidenziazione stimata). Corretto con tolleranza 1e-6: andata/ritorno parola→posizione→parola esatto 21 588/21 588.
-- Evidenziazioni DE→IT sulla scheda reale: 10/10 sulle parole giuste (prima 0/2 per le due del progetto: «Handling:» → «un sensore», ora «d'uso:»; «Intelligentes» → «il design», ora «intelligente»).
-- Paragrafi, confronto sul contenuto (traduzione inequivocabile, ±1 pagina): TI01136C 95,0 % semantico vs 92,3 % euristico; CUS52D 82,1 % vs 78,6 %. Attenzione: il criterio «stessa pagina» penalizza a torto il semantico quando il testo passa alla pagina dopo in una lingua.
-- Regressione: passo 3, dialoghi, passo 4 (24/24), OCR ripresa (10/10): tutto OK.
+**0.5.0** (22.10.2026) — version shown, Ollama status indicator, translation of the selection: version, green/red indicator (Ollama running / stopped / without model, automatic return to green), menu, translation of the selection (first time ~30 s with model loading, then a few seconds; streamed), box attached to the selection also when scrolling and zooming, cache, language change, save as note, closing, interruption: **33/33**.
 
-**0.5.1** (26.10.2026) — velocità della traduzione:
-- `ollama_base()` usa **127.0.0.1** (anche al posto di `localhost`/`0.0.0.0` in `OLLAMA_HOST`): con «localhost» Windows prova prima IPv6 e ogni richiesta perdeva ~2 s (misurato 2–3 s → 0,03 s). Vale per tutto: traduzione della selezione, generazione lingua, embedding, controllo di stato.
-- **Precaricamento** del modello quando compare il menu della selezione (`preload_model` → `ModelPreloader`: `/api/ps`, poi `/api/generate` senza prompt con le **stesse** `OLLAMA_OPTIONS`; con `num_ctx` diverso Ollama ricaricherebbe il modello, ~30 s). Il riquadro scrive «Caricamento del modello in memoria…» se il modello non è pronto (`ollama_loaded`).
-- Misure (parola singola, DE→IT): modello in memoria 6,9 s → 5,3–5,5 s (Ollama diretto); ~4,7 s sono la lettura delle ~100 istruzioni del prompt. Modello da caricare: 50–80 s con poca RAM libera; il precaricamento ne nasconde la parte trascorsa mentre si sceglie dal menu (81 s → 44 s dal clic, dopo 8 s di menu).
-- Non applicata (scelta dell'utente): istruzioni più corte per selezioni senza numeri/codici (51 token invece di 99, ~1–2 s in meno).
+**0.4.1** (22.10.2026) — report: «the alignment seems worse» (datasheet Turbimax CUS52D DE/IT).
+- Cause: the paragraph was right, the **word** was not (proportional estimate) + bug in `Document._pos_to_word` (rounding: 7 + 3/18 → one extra word at the sides of every estimated highlight). Fixed with a 1e-6 tolerance: word→position→word round trip exact 21 588/21 588.
+- DE→IT highlights on the real datasheet: 10/10 on the right words (before: «Handling:» → «un sensore», now «d'uso:»; «Intelligentes» → «il design», now «intelligente»).
+- Paragraphs, content-based comparison (unambiguous translation, ±1 page): TI01136C 95.0 % semantic vs 92.3 % heuristic; CUS52D 82.1 % vs 78.6 %. Note: a «same page» criterion wrongly penalises the semantic method when the text moves to the next page in one language.
 
-**0.5.0** (22.10.2026) — test offscreen con Ollama reale sulla scheda CUS52D DE: versione, indicatore verde/rosso (Ollama attivo / spento / senza modello, ritorno automatico al verde), menu, traduzione della selezione (prima volta ~30 s con caricamento del modello, poi pochi secondi; mostrata in streaming), riquadro attaccato alla selezione anche scorrendo e con lo zoom, cache, cambio lingua, salva come nota, chiusure, interruzione.
-- Nota per i test offscreen: chiudere la finestra con un progetto non salvato apre «Salvare il progetto?» e il test resta fermo → sostituire `QMessageBox.question`.
+**0.4.0** (22.10.2026) — semantic alignment via Ollama and OCR. IT PDF of 6 pages (pages 2–3 scanned) + native DE PDF with different pagination, one missing paragraph and **no numbers/acronyms**: **24/24**; OCR interruption/resume/error: **10/10** (with 30 pages: the faster OCR finished 8 pages before the test could stop it).
+- Heuristic: 0 anchors on these texts; **semantic via Ollama: 23/23 correct paragraphs** (similarity of translations 0.88–0.96, unrelated ≤ 0.46; ~11 paragraphs/s on CPU, first model loading ~15 s).
+- OCR: ~0.7–1.8 s/page (300 dpi), exact text; highlight on a later page re-anchored on the same words, note on the scanned page, save/reopen without repeating the OCR.
+- Generation from a scanned source: original text covered (the OCR of the generated page no longer finds it), image kept, 12–13 pt font for a 12 pt original.
+- Packaged `.exe`: `--ocr` works without a console; when a project is opened the OCR starts by itself and the annotations are saved with the new `tk`.
 
-## 7. Limiti noti
-- `get_text("blocks", sort=True)`: nelle pagine a più colonne l'ordine di lettura può mescolare le colonne.
-- La stima fine dentro il paragrafo usa numeri/sigle, punteggiatura e parole affini: le parole senza corrispondenza (es. Kalibrierung/taratura) restano proporzionali, e un'evidenziazione può coprire qualche parola in meno della frase tradotta (stesso numero di parole dell'originale).
-- Rendering pagine sul thread principale (possibile lentezza su PDF pesanti a zoom alto).
-- Pagine ruotate non verificate.
-- Le annotazioni già presenti nei PDF originali vengono mostrate (renderizzate) ma non importate nel progetto.
-- **Passo 3**:
-  - Stile per paragrafo: la formattazione **interna** (una parola in grassetto, es. «**ATTENZIONE:** …») si perde, vale lo stile prevalente.
-  - Font: famiglie generiche `sans-serif`/`serif` di MuPDF, non il font originale. Caratteri non latini (cinese, giapponese…) non verificati.
-  - Per sostituire il PDF generato il file non deve essere aperto in un altro programma (Acrobat lo blocca su Windows): in quel caso compare un avviso e resta la versione precedente.
-  - Testo che non sta nemmeno nello spazio libero → il carattere viene ridotto (nessun limite minimo).
-  - Dopo una rigenerazione, *Annulla* (Ctrl+Z) può riportare annotazioni con il vecchio hash → in quella lingua tornano "stimate".
-  - Pagine scansionate: tradotte dopo l'OCR, il testo nuovo copre l'originale con un riquadro del colore della carta (su sfondi a motivi o foto il riquadro si vede). Due colonne: ordine dei blocchi come al passo 1, ma ogni blocco resta nel suo riquadro.
+**0.3.0** (19.10.2026) — generation of a missing language, with a **fake Ollama server** (IT→DE dictionary, streaming, longer text, one code "lost" on purpose), synthetic 4-page PDF with centred title, justified paragraphs, hyphenated word, coloured box, image, ruled table: **98/98**.
+- TranslateGemma prompt format; glossary inserted only if the term appears.
+- Test on 2 pages + estimate; interruption half-way and resume: **only** the missing units translated again.
+- Generated PDF: original text removed, image and graphics kept, page number unchanged, no overlap, centred/bold/same-size title, **first line at the same height** (69.5 ↔ 69.5 pt), body not shrunk, colour and box limits respected, **every table cell in its column**.
+- Exact alignment 40/40 anchors; IT highlight found on the DE text; language switch on the right page.
+- Edit and re-translation of a paragraph, annotation made in DE re-anchored after regeneration, manual corrections kept, save/reopen, clear message with Ollama stopped or model missing.
+- Real measurements (Ollama 0.40.6, translategemma:4b, i5-8265U CPU only): model loading ~50 s (first time; then `keep_alive` 30 min); generation ~7–8 tokens/s; **prompt processing ~4 s per call** (Ollama does not reuse the common prefix with this model) → every cell or short title costs ~6 s, a 270-character paragraph ~20 s; test page (1 100 characters, 12 units): 166 s → **100-page manual ≈ 4–8 h**. Quality IT→DE/FR good: codes and units intact, no added comments. **Glossary only partly respected** (e.g. «quadro elettrico» → «elektrisches Gehäuse» instead of «Schaltschrank»).
 
-- **Passo 4**:
-  - OCR solo su pagine **interamente** prive di testo: le pagine miste (testo digitale + parti scansionate) non vengono riconosciute.
-  - Romancio: nessun modello Tesseract, si usa `ita+deu`. Lingue non in `OCR_LANGS` → `eng`.
-  - Le annotazioni fatte su una pagina scansionata **prima** dell'OCR vengono riagganciate alla parola più vicina (posizione approssimata).
-  - Un PDF generato da una sorgente il cui OCR è cambiato dopo la generazione perde l'allineamento esatto (torna stimato).
+**0.2 / 0.1** — synthetic PDFs IT 10 p. / DE 12 p.: heuristic alignment 120/120 correct paragraphs, without numbering and with 5 missing paragraphs 115/115; switch IT→DE→IT keeps the position; IT highlight «centrale 40 con protocollo IEC 61850.» → estimated DE «40 mit dem Protokoll IEC 61850.»; mouse selection, undo, PDF export (Highlight + Text annot), save and reopen: OK.
 
-## 8. Passo 3: generazione lingua mancante — fatto, da verificare con il modello reale
-**Prossimi passi**
-1. Installare dipendenze e Ollama, `ollama pull translategemma:4b`, misurare la velocità reale (prova su 2–3 pagine nel dialogo, oppure `ollama run translategemma:4b --verbose "<prompt>"` → **eval rate**).
-2. Provare su un **manuale reale** (tabelle complesse, due colonne, note a piè di pagina) e valutare la qualità della traduzione e del layout.
-3. Se serve: formattazione interna (span grassetto/corsivo → HTML), font originali o Noto incorporati per lingue non latine, BabelDOC come motore alternativo, Argos Translate come motore "rapido".
+## 7. Known limits
+- `get_text("blocks", sort=True)`: on multi-column pages the reading order can mix the columns.
+- The fine estimate inside a paragraph uses numbers/acronyms, punctuation and cognates: words without a match (e.g. Kalibrierung/taratura) stay proportional, and a highlight can cover a few words less than the translated phrase (same number of words as the original).
+- Page rendering on the main thread (possible slowness on heavy PDFs at high zoom).
+- Rotated pages not verified.
+- Annotations already present in the original PDFs are shown (rendered) but not imported into the project.
+- Language generation:
+  - Style per paragraph: **inline** formatting (one bold word, e.g. «**ATTENZIONE:** …») is lost, the prevailing style applies.
+  - Fonts: generic MuPDF `sans-serif`/`serif` families, not the original font. Non-Latin scripts (Chinese, Japanese…) not verified.
+  - To replace the generated PDF the file must not be open in another program (Acrobat locks it on Windows): in that case a warning appears and the previous version stays.
+  - Text that does not fit even in the free space → the font is reduced (no minimum).
+  - After a regeneration, *Undo* (Ctrl+Z) can bring back annotations with the old hash → in that language they become "estimated" again.
+  - Scanned pages: translated after OCR, the new text covers the original with a box of the paper colour (on patterned or photo backgrounds the box is visible).
+- OCR:
+  - Only on pages **entirely** without text: mixed pages (digital text + scanned parts) are not recognised.
+  - Romansh: no Tesseract model, `ita+deu` is used. Languages not in `OCR_LANGS` → `eng`.
+  - Annotations made on a scanned page **before** the OCR are re-anchored to the nearest word (approximate position).
+  - A PDF generated from a source whose OCR changed after the generation loses the exact alignment (becomes estimated).
+- Interface language: the change takes effect at the next start (the window is not rebuilt live).
 
-**Decisioni prese (implementate)**
-- LLM: **Ollama + `translategemma:4b`** (3.3 GB, default; `translategemma:12b` 8.1 GB come opzione). Su CPU: 100 pagine ≈ qualche ora (stima da verificare) → traduzione in background con cache e ripresa.
-- Prompt raccomandato da Ollama per TranslateGemma: *"You are a professional {SRC} ({src}) to {TGT} ({tgt}) translator … Produce only the {TGT} translation, without any additional explanations or commentary."* + **due righe vuote** + testo.
-- API Ollama: `POST http://localhost:11434/api/generate` (o `/api/chat`), solo `urllib`/`requests`, nessuna libreria in più.
-- Motore PDF **integrato con PyMuPDF**: per ogni blocco → `add_redact_annot` + `apply_redactions(images=PDF_REDACT_IMAGE_NONE)` per togliere il testo senza toccare immagini e grafica → `insert_htmlbox` / `insert_textbox` nello stesso riquadro con riduzione automatica del carattere. Font di riserva (es. Noto Sans) per i caratteri mancanti.
-- **Mappatura esatta**: il PDF generato salva accanto un file di corrispondenza blocco→blocco, così l'allineamento non va stimato.
-- Opzionale in futuro: BabelDOC (AGPL-3.0, endpoint compatibile OpenAI → Ollama) come motore alternativo per layout complessi, chiamato come processo esterno. Argos Translate come motore "rapido".
+## 8. Possible next steps
+1. Test on more **real manuals** (complex tables, two columns, footnotes) and evaluate translation and layout quality.
+2. Shorter prompt for short selections (~1–2 s less per translation).
+3. Group several short units (cells, titles) into one request to amortise the ~4 s of prompt processing; flag among "to review" the paragraphs where a glossary term was not respected.
+4. Inline formatting (bold/italic spans → HTML), original or embedded Noto fonts for non-Latin scripts, BabelDOC (AGPL-3.0, OpenAI-compatible endpoint → Ollama) as an alternative engine for complex layouts, Argos Translate as a "fast" engine.
+5. Move the test scripts into `tests/` in the repository.
 
-**Implementato (19.10.2026)**
-1. ✅ Dialogo "Genera lingua…" (sorgente, destinazione, modello, prova su N pagine con stima del tempo, file, glossario).
-2. ✅ Regole nel prompt: non tradurre codici/sigle/numeri/unità + **glossario utente** (nel progetto, per coppia di lingue) + controllo dei numeri/sigle persi.
-3. ✅ Worker in background con avanzamento, cache per unità (`hash_doc + chiave unità + lingue + modello`), ripresa.
-4. ✅ Ricostruzione PDF + inserimento nel progetto come nuova lingua, con allineamento esatto.
-5. ✅ Revisione: tasto destro su un paragrafo tradotto → modifica o ritraduci → il PDF si rigenera.
-   *Nota*: si rigenera l'intero PDF (non la sola pagina): più semplice e deterministico, pochi secondi anche per 100 pagine.
-
-**Misure reali (19.10.2026, Ollama 0.40.6, translategemma:4b, i5-8265U solo CPU)**
-- Caricamento del modello in memoria: ~50 s (solo la prima volta; poi `keep_alive` 30 min).
-- Generazione ~7–8 token/s. **Elaborazione del prompt ~4 s a ogni chiamata** (~100 token di istruzioni, ~25 token/s): Ollama non riutilizza il prefisso comune con questo modello, nemmeno con prompt identico.
-  → ogni cella o titolo breve costa ~6 s; un paragrafo di 270 caratteri ~20 s.
-- Pagina di prova (1 100 caratteri, 12 unità): 166 s, ~7 caratteri/s → **manuale di 100 pagine ≈ 4–8 h**.
-- Qualità IT→DE/FR buona: codici e unità intatti, nessun commento aggiunto. **Glossario rispettato solo in parte** (es. «quadro elettrico» → «elektrisches Gehäuse» invece di «Schaltschrank» nel 2° paragrafo; «sezionatore» → «Schalter» in una frase breve).
-- Idee: raggruppare più unità brevi (celle, titoli) in una sola richiesta, una per riga, per ammortizzare i 4 s; segnalare tra i "da rivedere" i paragrafi in cui un termine del glossario non è stato rispettato.
-
-## 9. Preferenze di sviluppo
-- Sviluppo **incrementale**, codice completo e funzionante a ogni passo, testato prima della consegna.
-- Risposte concise e strutturate, in italiano.
-- Interfaccia del tool in italiano.
+## 9. Development preferences
+- **Incremental** development, complete and working code at every step, tested before delivery.
+- Replies to the developer: concise and structured, **in Italian**.
+- Code, comments, docstrings, documentation and commit messages **in English**; interface **bilingual EN/IT** (every new text: English in `_t("…")` + Italian entry in `IT_TEXTS`).
+- Build the .exe / installer / portable version **only when explicitly asked**.

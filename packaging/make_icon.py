@@ -1,4 +1,4 @@
-"""Disegna l'icona dell'applicazione (due pagine sovrapposte in lingue diverse) -> polyglot_pdf.ico"""
+"""Draws the application icon (two overlapping pages in different languages) -> polyglot_pdf.ico"""
 import os
 import struct
 import sys
@@ -39,7 +39,7 @@ def page(x, y, w, h, fill, text, color):
     p.setFont(f)
     p.drawText(QRectF(x, y + h * 0.22, w, h * 0.5), Qt.AlignCenter, text)
     p.setPen(QPen(QColor(color).lighter(150), 7, Qt.SolidLine, Qt.RoundCap))
-    for k in range(2):                          # righe di testo stilizzate
+    for k in range(2):                          # stylised text lines
         yy = y + h * (0.76 + 0.11 * k)
         p.drawLine(int(x + w * 0.18), int(yy), int(x + w * (0.82 - 0.2 * k)), int(yy))
 
@@ -58,7 +58,7 @@ def png_bytes(image):
     return bytes(ba)
 
 
-# .ico con più dimensioni (voci PNG, supportate da Windows Vista in poi)
+# .ico with several sizes (PNG entries, supported since Windows Vista)
 sizes = (16, 24, 32, 48, 64, 128, 256)
 pngs = [png_bytes(img.scaled(s, s, Qt.KeepAspectRatio, Qt.SmoothTransformation)) for s in sizes]
 header = struct.pack("<HHH", 0, 1, len(sizes))
@@ -70,4 +70,4 @@ for s, data in zip(sizes, pngs):
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "polyglot_pdf.ico")
 with open(out, "wb") as f:
     f.write(header + entries + b"".join(pngs))
-print("icona:", out, "dimensioni:", sizes)
+print("icon:", out, "sizes:", sizes)
